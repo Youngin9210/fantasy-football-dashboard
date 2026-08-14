@@ -2,9 +2,26 @@ import * as St from './state.js';
 import { parseRankingsCsv } from './csv.js';
 import * as Sleeper from './sleeper.js';
 import { pickToSlotIndex, pickToRound, nextPickForSlot, assignRosterSlots, computeNeeds } from './draft.js';
+import { rosterState, recommendOrder } from './recommend.js';
+import { normalizePos } from './positions.js';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K'];
 const FLEX_POS = ['RB', 'WR', 'TE'];
+
+// "QB:3,RB:6" -> {QB: 3, RB: 6}. Tolerates spaces and trailing commas.
+function parseLimitsInput(text) {
+  const limits = {};
+  for (const part of String(text || '').split(',')) {
+    const [pos, max] = part.split(':').map((x) => (x || '').trim().toUpperCase());
+    const n = parseInt(max, 10);
+    if (pos && Number.isFinite(n) && n > 0) limits[pos] = n;
+  }
+  return limits;
+}
+
+function formatLimits(limits) {
+  return Object.entries(limits || {}).map(([pos, max]) => `${pos}:${max}`).join(',');
+}
 
 let currentFilter = 'ALL';
 let currentSearch = '';
@@ -33,6 +50,7 @@ function initSetupPanel() {
   const s = St.getState().settings;
   document.getElementById('numTeams').value = s.numTeams;
   document.getElementById('rosterSpots').value = s.rosterSpots.join(',');
+  document.getElementById('positionLimits').value = formatLimits(s.positionLimits);
   document.getElementById('scoringNotes').value = s.scoringNotes;
   document.getElementById('sleeperLeagueId').value = s.sleeperLeagueId;
 
@@ -40,8 +58,14 @@ function initSetupPanel() {
     St.updateSettings({ numTeams: parseInt(e.target.value, 10) || 10 });
   });
   document.getElementById('rosterSpots').addEventListener('change', (e) => {
-    const spots = e.target.value.split(',').map((x) => x.trim().toUpperCase()).filter(Boolean);
+    // normalizePos, not toUpperCase: a hand-typed "DEF" or "D/ST" must become
+    // DST here for the same reason Sleeper's roster_positions does — slot
+    // matching is exact, so a DEF slot would silently never fill.
+    const spots = e.target.value.split(',').map(normalizePos).filter(Boolean);
     if (spots.length) St.updateSettings({ rosterSpots: spots });
+  });
+  document.getElementById('positionLimits').addEventListener('change', (e) => {
+    St.updateSettings({ positionLimits: parseLimitsInput(e.target.value) });
   });
   document.getElementById('scoringNotes').addEventListener('change', (e) => {
     St.updateSettings({ scoringNotes: e.target.value });
@@ -77,14 +101,21 @@ function initSetupPanel() {
     }
     msg.textContent = 'Connecting…';
     try {
-      const { draft, teams, orderKnown } = await Sleeper.connectLeague(leagueId);
+      const { draft, teams, orderKnown, rosterPositions, positionLimits } =
+        await Sleeper.connectLeague(leagueId);
       St.setTeams(teams);
       St.updateSettings({
         numTeams: teams.length,
         sleeperLeagueId: leagueId,
         sleeperDraftId: draft.draft_id,
         sleeperSyncEnabled: true,
+        // Only overwrite when Sleeper actually returned something, so a sparse
+        // league response never wipes a hand-entered roster.
+        ...(rosterPositions.length ? { rosterSpots: rosterPositions } : {}),
+        ...(Object.keys(positionLimits).length ? { positionLimits } : {}),
       });
+      document.getElementById('rosterSpots').value = St.getState().settings.rosterSpots.join(',');
+      document.getElementById('positionLimits').value = formatLimits(St.getState().settings.positionLimits);
       msg.textContent = orderKnown
         ? `Connected: ${teams.length} teams found, in draft order. Pick "which team is mine" below, then start syncing picks.`
         : `Connected: ${teams.length} teams found. Your commissioner hasn't set the draft order yet, so these are listed in league order, NOT draft order — "on the clock" and snake order will be wrong until you reconnect after the order is posted. Team names and pick syncing work either way.`;
@@ -147,6 +178,14 @@ function initSetupPanel() {
   });
 }
 
+function initSortToggle() {
+  document.getElementById('sortToggle').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-sort]');
+    if (!btn) return;
+    St.updateSettings({ sortMode: btn.getAttribute('data-sort') });
+  });
+}
+
 // ---------- Sleeper sync ----------
 function startSleeperPolling() {
   if (stopPolling) stopPolling();
@@ -170,15 +209,7 @@ function startSleeperPolling() {
         const players = St.getState().players;
         let matched = Sleeper.matchPickToPlayer(pick, players);
         if (!matched) {
-          const meta = pick.metadata || {};
-          const name = `${meta.first_name || ''} ${meta.last_name || ''}`.trim() || meta.player_id || `Pick #${pick.pick_no}`;
-          matched = St.addManualPlayer({
-            name,
-            team: (meta.team || '').toUpperCase(),
-            pos: (meta.position || '').toUpperCase(),
-            bye: null,
-            rank: null,
-          });
+          matched = St.addManualPlayer(Sleeper.pickToManualPlayer(pick));
         }
         St.draftPlayer(matched.id, teamId, pick.pick_no);
       }
@@ -269,26 +300,66 @@ function filteredPlayers() {
 
 function renderPlayersBody() {
   const tbody = document.getElementById('playersBody');
-  const teams = St.getState().teams;
+  const { settings, teams, players } = St.getState();
   const list = filteredPlayers();
-  let lastTier = undefined;
 
-  tbody.innerHTML = list
-    .map((p) => {
-      const tierStart = p.tier !== undefined && p.tier !== null && p.tier !== lastTier;
+  const useNeed = settings.sortMode === 'need';
+  document.querySelectorAll('#sortToggle [data-sort]').forEach((b) => {
+    b.classList.toggle('active', b.getAttribute('data-sort') === (useNeed ? 'need' : 'rank'));
+  });
+
+  // Recommendations only make sense once we know whose roster to build, so
+  // without a chosen team this falls back to plain rank order.
+  let scored;
+  if (useNeed && settings.myTeamId) {
+    const mine = players
+      .filter((p) => p.drafted && p.draftedByTeamId === settings.myTeamId)
+      .sort((a, b) => (a.pickNo || 0) - (b.pickNo || 0));
+    const state = rosterState(settings.rosterSpots, mine);
+    scored = recommendOrder(list.filter((p) => !p.drafted), state, settings.positionLimits)
+      .concat(list.filter((p) => p.drafted).map((player) => ({ player, reason: '', excluded: false })));
+  } else {
+    scored = list.map((player) => ({ player, reason: '', excluded: false }));
+  }
+
+  let lastTier = undefined;
+  let dividerShown = false;
+
+  tbody.innerHTML = scored
+    .map(({ player: p, reason, excluded }) => {
+      // Tier dividers are suppressed in need mode: they only mean something
+      // when the board is in rank order.
+      const tierStart = !useNeed && p.tier !== undefined && p.tier !== null && p.tier !== lastTier;
       lastTier = p.tier;
       const teamName = p.draftedByTeamId ? (teams.find((t) => t.id === p.draftedByTeamId)?.name || 'Unknown') : '';
-      const rowClasses = [tierStart ? 'tier-start' : '', p.drafted ? 'drafted' : ''].filter(Boolean).join(' ');
+      const rowClasses = [
+        tierStart ? 'tier-start' : '',
+        p.drafted ? 'drafted' : '',
+        excluded ? 'limit-excluded' : '',
+      ].filter(Boolean).join(' ');
       const actionCell = p.drafted
         ? `<button class="btn small danger" data-undraft="${p.id}">✕</button>`
         : `<button class="btn small primary" data-draft="${p.id}">Draft</button>`;
-      return `<tr class="${rowClasses}">
+
+      let divider = '';
+      if (excluded && !dividerShown) {
+        dividerShown = true;
+        divider = '<tr class="limit-divider"><td colspan="9">At position limit</td></tr>';
+      }
+
+      const whyClass = reason.includes('LIMIT') ? 'limit'
+        : reason === 'WAIT' ? 'wait'
+        : reason.startsWith('FILLS') ? 'fills' : '';
+      const whyCell = reason ? `<span class="why-badge ${whyClass}">${escapeHtml(reason)}</span>` : '';
+
+      return `${divider}<tr class="${rowClasses}">
         <td>${p.rank ?? '—'}${p.tier ? `<span class="badge-unranked">T${p.tier}</span>` : ''}</td>
         <td><span class="player-name">${escapeHtml(p.name)}</span>${p.source === 'manual' ? '<span class="badge-unranked">unranked</span>' : ''}</td>
         <td>${p.pos ? `<span class="pos-badge ${p.pos}">${p.pos}</span>` : ''}</td>
         <td class="player-meta">${escapeHtml(p.team || '')}</td>
         <td class="player-meta">${p.bye ?? ''}</td>
         <td class="player-meta">${p.adp ?? ''}</td>
+        <td>${whyCell}</td>
         <td class="drafted-by">${p.drafted ? `#${p.pickNo} · ${escapeHtml(teamName)}` : ''}</td>
         <td>${actionCell}</td>
       </tr>`;
@@ -387,6 +458,7 @@ function render() {
 function init() {
   initTheme();
   initSetupPanel();
+  initSortToggle();
 
   document.getElementById('searchBox').addEventListener('input', (e) => {
     currentSearch = e.target.value;

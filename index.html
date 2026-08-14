@@ -32,6 +32,11 @@
           <div class="hint">FLEX = RB/WR/TE. BN = bench (any position).</div>
         </div>
         <div class="field">
+          <label for="positionLimits">Position limits (max per position)</label>
+          <input type="text" id="positionLimits" placeholder="QB:3,RB:6,WR:6,TE:3,K:2,DST:3" />
+          <div class="hint">Blank means no limit. Filled in automatically when you sync Sleeper.</div>
+        </div>
+        <div class="field">
           <label for="scoringNotes">Scoring notes (reference only)</label>
           <input type="text" id="scoringNotes" />
         </div>
@@ -89,6 +94,10 @@
     <section class="panel">
       <div class="controls">
         <input id="searchBox" placeholder="Search players…" />
+        <div class="sort-toggle" id="sortToggle">
+          <button class="btn small" data-sort="rank">By rank</button>
+          <button class="btn small" data-sort="need">Best for my roster</button>
+        </div>
         <div class="pos-filters" id="posFilters"></div>
         <span style="flex:none; display:flex; align-items:center; gap:6px;">
           <label class="hint" style="margin:0;">Draft pick for:</label>
@@ -105,6 +114,7 @@
               <th>Team</th>
               <th>Bye</th>
               <th>ADP</th>
+              <th>Why</th>
               <th>Status</th>
               <th></th>
             </tr>

@@ -42,3 +42,11 @@ test('a defense fills a defense slot from either spelling', () => {
   const { slots } = assignRosterSlots([slotLabel], [{ pos: playerPos, name: 'Ravens' }]);
   assert.equal(slots[0].player.name, 'Ravens', 'the defense slot actually fills');
 });
+
+test('a Sleeper DEF pick normalizes to DST for roster and limit matching', () => {
+  // app.js previously stored Sleeper's raw 'DEF' via addManualPlayer, which
+  // silently broke both DST slot-filling and the DST position limit.
+  assert.equal(normalizePos('DEF'), 'DST');
+  const { slots } = assignRosterSlots(['DST'], [{ pos: normalizePos('DEF'), name: 'Ravens D/ST' }]);
+  assert.equal(slots[0].player.name, 'Ravens D/ST');
+});

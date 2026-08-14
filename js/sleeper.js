@@ -137,6 +137,24 @@ function matchPickToPlayer(pick, players) {
   );
 }
 
+// Builds the fields for a manual player from a pick that matched nothing in the
+// imported rankings. Positions are canonicalized here, at the Sleeper boundary:
+// Sleeper spells team defenses DEF, and a raw DEF in state would never fill a
+// DST roster slot nor count toward the DST position limit.
+function pickToManualPlayer(pick) {
+  const meta = pick.metadata || {};
+  const name = `${meta.first_name || ''} ${meta.last_name || ''}`.trim()
+    || meta.player_id
+    || `Pick #${pick.pick_no}`;
+  return {
+    name,
+    team: (meta.team || '').toUpperCase(),
+    pos: normalizePos(meta.position),
+    bye: null,
+    rank: null,
+  };
+}
+
 // Starts polling a draft's picks every `intervalMs`. Calls onPicks(picks) each
 // successful fetch, and onStatus({ok, error}) on every attempt (success or failure).
 function startPolling(draftId, onPicks, onStatus, intervalMs = 6000) {
@@ -161,4 +179,12 @@ function startPolling(draftId, onPicks, onStatus, intervalMs = 6000) {
   };
 }
 
-export { connectLeague, fetchDraftPicks, matchPickToPlayer, normalizeName, startPolling, parsePositionLimits };
+export {
+  connectLeague,
+  fetchDraftPicks,
+  matchPickToPlayer,
+  normalizeName,
+  startPolling,
+  parsePositionLimits,
+  pickToManualPlayer,
+};

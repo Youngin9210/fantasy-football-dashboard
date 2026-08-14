@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { connectLeague } from '../js/sleeper.js';
+import { connectLeague, pickToManualPlayer } from '../js/sleeper.js';
+import { assignRosterSlots } from '../js/draft.js';
 
 // Shapes captured from the live Sleeper API for league 1389708373728964608.
 const LEAGUE = {
@@ -56,6 +57,29 @@ test('a league with no limits configured returns an empty map', async () => {
   const { positionLimits, rosterPositions } = await connectLeague('L');
   assert.deepEqual(positionLimits, {});
   assert.deepEqual(rosterPositions, ['QB', 'BN']);
+});
+
+// A pick with no match in the imported rankings gets added to state as a manual
+// player. It previously kept Sleeper's raw 'DEF', so the synced defense never
+// filled the DST slot and never counted toward the DST position limit.
+test('an unmatched defense pick becomes a DST player, not DEF', () => {
+  const pick = {
+    pick_no: 40,
+    metadata: { first_name: 'Baltimore', last_name: 'Ravens', team: 'bal', position: 'DEF' },
+  };
+  const player = pickToManualPlayer(pick);
+  assert.equal(player.pos, 'DST');
+  assert.equal(player.team, 'BAL');
+  assert.equal(player.name, 'Baltimore Ravens');
+
+  const { slots } = assignRosterSlots(['DST'], [player]);
+  assert.equal(slots[0].player.name, 'Baltimore Ravens', 'the DST slot actually fills');
+});
+
+test('an unmatched pick with no name at all still gets a label', () => {
+  const player = pickToManualPlayer({ pick_no: 7, metadata: {} });
+  assert.equal(player.name, 'Pick #7');
+  assert.equal(player.pos, '');
 });
 
 test('a league missing roster_positions returns an empty array', async () => {
