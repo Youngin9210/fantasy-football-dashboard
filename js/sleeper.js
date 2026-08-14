@@ -1,7 +1,29 @@
 // Sleeper API integration (public, read-only, no auth required).
 // Docs: https://docs.sleeper.com/
 
+import { normalizePos } from './positions.js';
+
 const BASE = 'https://api.sleeper.app/v1';
+
+// Sleeper exposes per-position roster caps as flat settings keys. Defense is
+// keyed as `def` there but canonicalized to DST everywhere in this app.
+const POSITION_LIMIT_KEYS = {
+  position_limit_qb: 'QB',
+  position_limit_rb: 'RB',
+  position_limit_wr: 'WR',
+  position_limit_te: 'TE',
+  position_limit_k: 'K',
+  position_limit_def: 'DST',
+};
+
+function parsePositionLimits(settings = {}) {
+  const limits = {};
+  for (const [key, pos] of Object.entries(POSITION_LIMIT_KEYS)) {
+    const value = settings[key];
+    if (typeof value === 'number' && value > 0) limits[pos] = value;
+  }
+  return limits;
+}
 
 async function getJson(url) {
   const res = await fetch(url);
@@ -81,7 +103,10 @@ async function connectLeague(leagueId) {
     });
   }
 
-  return { league, draft, teams, orderKnown };
+  const rosterPositions = (league.roster_positions || []).map(normalizePos);
+  const positionLimits = parsePositionLimits(league.settings);
+
+  return { league, draft, teams, orderKnown, rosterPositions, positionLimits };
 }
 
 async function fetchDraftPicks(draftId) {
@@ -136,4 +161,4 @@ function startPolling(draftId, onPicks, onStatus, intervalMs = 6000) {
   };
 }
 
-export { connectLeague, fetchDraftPicks, matchPickToPlayer, normalizeName, startPolling };
+export { connectLeague, fetchDraftPicks, matchPickToPlayer, normalizeName, startPolling, parsePositionLimits };
