@@ -77,7 +77,8 @@ module. `-12` is calibrated so an empty starting slot is worth roughly one round
 of draft value: a clearly better player at a filled position still wins, but a
 close call breaks toward filling the roster.
 
-Worked example — round 5, TE slot empty, both RB slots full:
+Worked example — round 5, TE slot empty, both RB slots **and FLEX** full (a
+third RB already absorbed the FLEX spot, so a fourth draws no bonus at all):
 
 ```
 RB rank 38  ->  38 - 0  = 38   <- recommended
