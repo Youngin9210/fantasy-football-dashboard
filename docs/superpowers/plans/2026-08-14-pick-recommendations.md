@@ -389,7 +389,11 @@ kdefNeeded + 1)."
 
 **Interfaces:**
 - Consumes: `rosterState()` output from Task 2.
-- Produces: `scorePlayer(player: object, state: object, limits: {POS: number}) -> {score: number, reason: string, excluded: boolean}`. Task 4 consumes this.
+- Produces: `scorePlayer(player: object, state: object, limits: {POS: number}, weights: {starterBonus?: number, flexBonus?: number}) -> {score: number, reason: string, excluded: boolean}`. Task 4 consumes this.
+
+`weights` defaults to `{}`, meaning the module constants apply. It exists so
+Task 8 can calibrate the bonus by exercising this exact function rather than a
+second copy of the math that could silently disagree with it.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -470,6 +474,16 @@ test('K and DST are buried until urgent, then jump', () => {
   assert.equal(lateK.score, 150 - STARTER_BONUS);
 });
 
+test('injected weights override the module constants', () => {
+  const s = rosterState(SPOTS, []);
+  const heavy = scorePlayer(p('TE', 55), s, LIMITS, { starterBonus: 20 });
+  const light = scorePlayer(p('TE', 55), s, LIMITS, { starterBonus: 6 });
+  assert.equal(heavy.score, 35);
+  assert.equal(light.score, 49);
+  // Omitted weights fall back to the constants.
+  assert.equal(scorePlayer(p('TE', 55), s, LIMITS, {}).score, 55 - STARTER_BONUS);
+});
+
 test('positions absent from the limits map are unlimited', () => {
   const s = rosterState(SPOTS, [p('RB', 1), p('RB', 2), p('RB', 3)]);
   assert.equal(scorePlayer(p('RB', 50), s, {}).excluded, false);
@@ -506,7 +520,12 @@ const UNRANKED = 9999;
 
 // Scores one available player against the roster snapshot.
 // Lower score is a better pick. Excluded players are never draftable.
-function scorePlayer(player, state, limits = {}) {
+// `weights` overrides the tuning constants. It exists so the calibration script
+// can exercise this exact function at several bonus values instead of keeping a
+// second copy of the math that could drift out of agreement with it.
+function scorePlayer(player, state, limits = {}, weights = {}) {
+  const starterBonus = weights.starterBonus ?? STARTER_BONUS;
+  const flexBonus = weights.flexBonus ?? FLEX_BONUS;
   const pos = player.pos || '';
   const rank = Number.isFinite(player.rank) ? player.rank : UNRANKED;
 
@@ -519,17 +538,17 @@ function scorePlayer(player, state, limits = {}) {
 
   if (KDEF_POSITIONS.includes(pos)) {
     if (state.kdefUrgent && (state.openStarters[pos] || 0) > 0) {
-      return { score: rank - STARTER_BONUS, reason: `FILLS ${pos}`, excluded: false };
+      return { score: rank - starterBonus, reason: `FILLS ${pos}`, excluded: false };
     }
     return { score: rank + KDEF_PENALTY, reason: 'WAIT', excluded: false };
   }
 
   if ((state.openStarters[pos] || 0) > 0) {
-    return { score: rank - STARTER_BONUS, reason: `FILLS ${pos}`, excluded: false };
+    return { score: rank - starterBonus, reason: `FILLS ${pos}`, excluded: false };
   }
 
   if (state.openFlex > 0 && FLEX_ELIGIBLE.includes(pos)) {
-    return { score: rank - FLEX_BONUS, reason: 'FILLS FLEX', excluded: false };
+    return { score: rank - flexBonus, reason: 'FILLS FLEX', excluded: false };
   }
 
   return { score: rank, reason: 'BENCH', excluded: false };
@@ -564,7 +583,7 @@ applies; K/DST carry a burying penalty until urgent."
 
 **Interfaces:**
 - Consumes: `scorePlayer` from Task 3.
-- Produces: `recommendOrder(players: object[], state: object, limits: object) -> Array<{player, score, reason, excluded}>`. Task 7 renders this array directly.
+- Produces: `recommendOrder(players: object[], state: object, limits: object, weights: object) -> Array<{player, score, reason, excluded}>`. Task 7 renders this array directly; Task 8 passes `weights`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -624,9 +643,9 @@ Insert after `scorePlayer`, before the export block:
 // Scores an entire board and returns it sorted, best pick first.
 // Excluded players stay in the list — being told a top QB is sitting there
 // while you're at your QB limit is useful information about the board.
-function recommendOrder(players, state, limits = {}) {
+function recommendOrder(players, state, limits = {}, weights = {}) {
   return players
-    .map((player) => ({ player, ...scorePlayer(player, state, limits) }))
+    .map((player) => ({ player, ...scorePlayer(player, state, limits, weights) }))
     .sort((a, b) => {
       if (a.excluded !== b.excluded) return a.excluded ? 1 : -1;
       if (a.score !== b.score) return a.score - b.score;
@@ -1275,8 +1294,8 @@ decide, rather than leaving it a guess.
 - Create: `test/calibrate.js`
 
 **Interfaces:**
-- Consumes: `rosterState`, `scorePlayer` from `js/recommend.js`.
-- Produces: nothing — a throwaway diagnostic script, not part of the suite. It is named `.js` rather than `.test.js` so `node --test` does not pick it up.
+- Consumes: `rosterState`, `recommendOrder` from `js/recommend.js`, using the `weights` parameter added in Task 3.
+- Produces: nothing — a diagnostic script, not part of the suite. It is named `.js` rather than `.test.js` so `node --test` does not pick it up.
 
 - [ ] **Step 1: Write the calibration script**
 
@@ -1286,8 +1305,11 @@ Create `test/calibrate.js`:
 // Diagnostic, not a test. Prints the same mid-draft board scored at three
 // STARTER_BONUS values so the weight is chosen from observed behavior.
 //
+// Calls the real recommendOrder() with injected weights rather than re-deriving
+// the math, so what this prints is exactly what the app would show.
+//
 // Usage: node test/calibrate.js
-import { rosterState } from '../js/recommend.js';
+import { rosterState, recommendOrder } from '../js/recommend.js';
 
 const SPOTS = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DST',
   'BN', 'BN', 'BN', 'BN', 'BN', 'BN', 'BN'];
@@ -1312,22 +1334,20 @@ const BOARD = [
 ];
 
 const state = rosterState(SPOTS, MY_TEAM);
-const FLEX = ['RB', 'WR', 'TE'];
 
 for (const bonus of [6, 12, 20]) {
-  // Inline re-score so the module constant does not have to be edited.
   const flexBonus = Math.round(bonus / 2);
-  const ranked = BOARD.map((p) => {
-    let adj = 0;
-    let why = 'BENCH';
-    if ((state.openStarters[p.pos] || 0) > 0) { adj = bonus; why = `FILLS ${p.pos}`; }
-    else if (state.openFlex > 0 && FLEX.includes(p.pos)) { adj = flexBonus; why = 'FILLS FLEX'; }
-    return { ...p, score: p.rank - adj, why };
-  }).sort((a, b) => a.score - b.score);
+  const ranked = recommendOrder(BOARD, state, LIMITS, {
+    starterBonus: bonus,
+    flexBonus,
+  });
 
   console.log(`\n=== STARTER_BONUS = ${bonus} (FLEX ${flexBonus}) ===`);
   for (const r of ranked) {
-    console.log(`  ${String(r.score).padStart(3)}  #${String(r.rank).padStart(2)}  ${r.pos.padEnd(3)}  ${r.name.padEnd(16)} ${r.why}`);
+    console.log(
+      `  ${String(r.score).padStart(4)}  #${String(r.player.rank).padStart(2)}  ` +
+      `${r.player.pos.padEnd(3)}  ${r.player.name.padEnd(16)} ${r.reason}`
+    );
   }
 }
 ```
