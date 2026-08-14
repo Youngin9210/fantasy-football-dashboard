@@ -167,3 +167,42 @@ test('a player with no position is bench depth, never excluded', () => {
   assert.equal(r.excluded, false);
   assert.equal(r.reason, 'BENCH');
 });
+
+import { recommendOrder } from '../js/recommend.js';
+
+test('orders by score, excluded players last', () => {
+  const state = rosterState(SPOTS, [p('QB', 1), p('QB', 2), p('QB', 3)]);
+  const board = [p('QB', 4), p('WR', 60), p('K', 150), p('TE', 55)];
+  const ranked = recommendOrder(board, state, LIMITS);
+
+  assert.equal(ranked[0].player.pos, 'TE', 'TE 55 - 12 = 43 wins');
+  assert.equal(ranked[1].player.pos, 'WR', 'WR 60 - 12 = 48');
+  assert.equal(ranked[2].player.pos, 'K', 'K is buried but not excluded');
+  assert.equal(ranked[3].player.pos, 'QB', 'QB is at its limit, so dead last');
+  assert.equal(ranked[3].excluded, true);
+});
+
+test('ties break toward the better rank', () => {
+  const state = rosterState(SPOTS, []);
+  const ranked = recommendOrder([p('WR', 30), p('RB', 30)], state, LIMITS);
+  assert.equal(ranked[0].score, ranked[1].score);
+  assert.equal(ranked[0].player.rank, 30);
+});
+
+test('two excluded players still sort by rank without NaN', () => {
+  const state = rosterState(SPOTS, [p('QB', 1), p('QB', 2), p('QB', 3)]);
+  const ranked = recommendOrder([p('QB', 80), p('QB', 20)], state, LIMITS);
+  assert.equal(ranked[0].player.rank, 20);
+  assert.equal(ranked[1].player.rank, 80);
+});
+
+test('an empty board returns an empty array', () => {
+  assert.deepEqual(recommendOrder([], rosterState(SPOTS, []), LIMITS), []);
+});
+
+test('does not mutate the input array', () => {
+  const board = [p('WR', 60), p('TE', 55)];
+  const copy = [...board];
+  recommendOrder(board, rosterState(SPOTS, []), LIMITS);
+  assert.deepEqual(board, copy);
+});

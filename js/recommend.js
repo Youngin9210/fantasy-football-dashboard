@@ -89,9 +89,25 @@ function scorePlayer(player, state, limits = {}, weights = {}) {
   return { score: rank, reason: 'BENCH', excluded: false };
 }
 
+// Scores an entire board and returns it sorted, best pick first.
+// Excluded players stay in the list — being told a top QB is sitting there
+// while you're at your QB limit is useful information about the board.
+function recommendOrder(players, state, limits = {}, weights = {}) {
+  return players
+    .map((player) => ({ player, ...scorePlayer(player, state, limits, weights) }))
+    .sort((a, b) => {
+      if (a.excluded !== b.excluded) return a.excluded ? 1 : -1;
+      if (a.score !== b.score) return a.score - b.score;
+      const ar = Number.isFinite(a.player.rank) ? a.player.rank : UNRANKED;
+      const br = Number.isFinite(b.player.rank) ? b.player.rank : UNRANKED;
+      return ar - br;
+    });
+}
+
 export {
   rosterState,
   scorePlayer,
+  recommendOrder,
   UNRANKED,
   STARTER_BONUS,
   FLEX_BONUS,
