@@ -1,0 +1,136 @@
+// CSV parsing + flexible rankings import (FantasyPros export or custom CSV).
+
+// Minimal RFC4180-ish CSV parser: handles quoted fields with embedded commas/quotes/newlines.
+function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+  const s = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (s[i + 1] === '"') {
+          field += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === ',') {
+      row.push(field);
+      field = '';
+    } else if (c === '\n') {
+      row.push(field);
+      rows.push(row);
+      row = [];
+      field = '';
+    } else {
+      field += c;
+    }
+  }
+  if (field.length > 0 || row.length > 0) {
+    row.push(field);
+    rows.push(row);
+  }
+  return rows.filter((r) => r.some((c) => c.trim() !== ''));
+}
+
+const HEADER_ALIASES = {
+  rank: ['rk', 'rank', 'overall rank', 'ecr'],
+  tier: ['tiers', 'tier'],
+  name: ['player name', 'name', 'player', 'player_name'],
+  team: ['team', 'tm'],
+  pos: ['pos', 'position'],
+  bye: ['bye week', 'bye'],
+  adp: ['adp', 'avg pick', 'average pick'],
+};
+
+function normalizeHeader(h) {
+  return h.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+function matchColumn(headers) {
+  const map = {};
+  const normalized = headers.map(normalizeHeader);
+  for (const [key, aliases] of Object.entries(HEADER_ALIASES)) {
+    for (const alias of aliases) {
+      const idx = normalized.findIndex((h) => h === alias);
+      if (idx !== -1) {
+        map[key] = idx;
+        break;
+      }
+    }
+  }
+  return map;
+}
+
+function cleanPos(raw) {
+  if (!raw) return '';
+  // FantasyPros sometimes formats position as "RB1", "WR12" etc.
+  const m = raw.trim().toUpperCase().match(/^([A-Z]+)/);
+  return m ? m[1] : raw.trim().toUpperCase();
+}
+
+function cleanBye(raw) {
+  if (!raw) return null;
+  const m = String(raw).match(/\d+/);
+  return m ? parseInt(m[0], 10) : null;
+}
+
+// Parses rankings CSV text into an array of player objects (unassigned ids/drafted state).
+// Returns { players, warnings }.
+function parseRankingsCsv(text) {
+  const rows = parseCsv(text);
+  const warnings = [];
+  if (rows.length === 0) return { players: [], warnings: ['CSV appears empty.'] };
+
+  const headers = rows[0];
+  const colMap = matchColumn(headers);
+
+  if (colMap.name === undefined) {
+    warnings.push('Could not find a player name column — expected a header like "Player Name" or "Name".');
+    return { players: [], warnings };
+  }
+
+  const players = [];
+  for (let i = 1; i < rows.length; i++) {
+    const r = rows[i];
+    const name = (r[colMap.name] || '').trim();
+    if (!name) continue;
+
+    const rank = colMap.rank !== undefined ? parseInt(r[colMap.rank], 10) : i;
+    players.push({
+      rank: Number.isFinite(rank) ? rank : i,
+      tier: colMap.tier !== undefined ? (parseInt(r[colMap.tier], 10) || r[colMap.tier] || null) : null,
+      name,
+      team: colMap.team !== undefined ? (r[colMap.team] || '').trim().toUpperCase() : '',
+      pos: colMap.pos !== undefined ? cleanPos(r[colMap.pos]) : '',
+      bye: colMap.bye !== undefined ? cleanBye(r[colMap.bye]) : null,
+      adp: colMap.adp !== undefined ? parseFloat(r[colMap.adp]) || null : null,
+      drafted: false,
+      draftedByTeamId: null,
+      pickNo: null,
+      source: 'csv',
+    });
+  }
+
+  if (colMap.pos === undefined) {
+    warnings.push('No position column found — filtering by position (QB/RB/WR/TE/etc.) will not work until you add one.');
+  }
+
+  // Re-rank sequentially if rank column was missing or unreliable, preserving CSV order.
+  if (colMap.rank === undefined) {
+    players.forEach((p, idx) => (p.rank = idx + 1));
+  }
+
+  return { players, warnings };
+}
+
+export { parseCsv, parseRankingsCsv };

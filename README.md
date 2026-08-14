@@ -1,0 +1,106 @@
+# Fantasy Football Draft Day Dashboard
+
+A single-page, no-build-step dashboard for tracking a live fantasy draft: best
+player available, your roster and needs, snake draft order, and (optionally)
+automatic pick syncing from a live Sleeper draft. Everything runs client-side
+— your draft state lives in your browser's `localStorage`, nothing is sent to
+any server except live polling of the public Sleeper API if you connect it.
+
+## Quick start
+
+1. Open the site (see **Hosting on GitHub Pages** below), or just open
+   `index.html` directly in a browser / run a local static server.
+2. Click **⚙ Setup**.
+3. Under **League Settings**, set your number of teams and roster spots
+   (defaults match a standard 10-team, half-PPR league: `QB,RB,RB,WR,WR,TE,
+   FLEX,DST,K` + 6 bench).
+4. Set up your teams — either:
+   - **Manual**: type team names in draft-slot order under "Teams & My Slot",
+     click **Save Teams**, then pick which one is yours, or
+   - **Sleeper sync**: paste your league ID and click **Connect & Sync
+     Teams** (see below).
+5. Import your rankings under **Import Rankings (CSV)** — paste or upload a
+   CSV (a FantasyPros "Player Rankings" export works out of the box; any CSV
+   with `Rank`/`Player Name`/`Team`/`Pos`/`Bye Week` columns works too).
+6. Close Setup and draft. Click **Draft** next to a player to mark them
+   taken for whoever is on the clock (the "Draft pick for" dropdown
+   auto-advances through the snake order); click **✕** on a drafted row to
+   undo a specific pick, or **Undo Last Pick** to undo the most recent one.
+
+Rankings intentionally aren't preloaded — fantasy rankings shift constantly,
+so pull a fresh CSV right before your draft rather than trusting anything
+baked into the app ahead of time.
+
+## Sleeper live sync
+
+Sleeper (https://docs.sleeper.com) exposes a free, public, read-only API with
+no login required, so the dashboard can poll your actual draft and
+auto-mark picks as they happen — no manual clicking needed once it's
+running.
+
+1. Find your league ID: open your league on sleeper.com or in the app; the
+   URL looks like `sleeper.com/leagues/<LEAGUE_ID>/...` — copy that number.
+2. Paste it into **Sleeper League ID** and click **Connect & Sync Teams**.
+   This pulls your league's teams into the dashboard in the correct draft
+   order automatically (no need to type team names by hand).
+3. Pick which synced team is yours from the **Which team is mine?** dropdown.
+4. Once your league's draft is live, the dashboard polls picks every ~6
+   seconds and marks players off automatically, matching by name (and by
+   team for defenses). Any pick it can't confidently match to your imported
+   rankings is added as an "unranked" entry so your roster/team tracking
+   stays accurate — check the best-available list afterward if a name looks
+   off.
+
+You can still use the manual **Draft** button at any time (e.g. for
+corrections, or if you'd rather not connect Sleeper at all).
+
+If your network blocks requests to `api.sleeper.app` (rare, but some
+locked-down corporate/school networks do), sync will fail gracefully and
+you can just use the dashboard manually.
+
+## Hosting on GitHub Pages
+
+This repo has no build step — GitHub Pages can serve it directly:
+
+1. On GitHub, go to **Settings → Pages**.
+2. Under **Build and deployment**, choose **Deploy from a branch**.
+3. Pick the branch you want live (e.g. `main`) and folder `/ (root)`, then
+   **Save**.
+4. GitHub will publish it at `https://<your-username>.github.io/fantasy-football-dashboard/`
+   within a minute or two.
+
+Bookmark that URL for draft day. Since state is saved to `localStorage`,
+using the same browser (and not clearing site data) keeps your draft
+progress if you close the tab mid-draft.
+
+## What it does
+
+- **Best Available** — full rankings table, filterable by position
+  (including a combined FLEX filter) and searchable by name/team, with tier
+  dividers when your CSV includes a tier column.
+- **My Team** — your roster slots filled in as you draft, with starting
+  lineup needs called out (bench slots accept anyone).
+- **On the clock** — shows whose pick it is and how many picks until your
+  next turn, computed from a standard snake order.
+- **Draft Log** — running list of every pick, newest first.
+- **Light/dark theme** toggle (🌓, top right).
+
+## What it deliberately doesn't do
+
+- No baked-in player rankings/ADP or live stat projections — you supply
+  current rankings via CSV so you're never drafting off stale data.
+- No custom points-per-player value engine for your league's exact scoring
+  (e.g. 6pt passing TDs) — half-PPR consensus rankings from FantasyPros or
+  similar are close enough for draft-day purposes; treat QB value as
+  slightly underrated by generic rankings since your league pays out 6 for
+  passing TDs instead of the more common 4.
+
+## Local development
+
+No build step — just serve the folder statically, e.g.:
+
+```
+python3 -m http.server 8080
+```
+
+then open `http://localhost:8080`.
