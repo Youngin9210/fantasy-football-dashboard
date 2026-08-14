@@ -2,7 +2,8 @@
 
 const STORAGE_KEY = 'ffDraftState.v1';
 
-const DEFAULT_ROSTER = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'DST', 'K', 'BN', 'BN', 'BN', 'BN', 'BN', 'BN'];
+const DEFAULT_ROSTER = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DST',
+  'BN', 'BN', 'BN', 'BN', 'BN', 'BN', 'BN'];
 
 function defaultState() {
   return {
@@ -10,6 +11,8 @@ function defaultState() {
       numTeams: 10,
       myTeamId: null,
       rosterSpots: DEFAULT_ROSTER.slice(),
+      positionLimits: {}, // {POS: max}; empty means no limits
+      sortMode: 'rank', // 'rank' | 'need'
       scoringNotes: 'Half-PPR (0.5/rec), 6pt passing TD, -3 INT',
       sleeperLeagueId: '',
       sleeperDraftId: '',
@@ -31,7 +34,14 @@ function load() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaultState();
     const parsed = JSON.parse(raw);
-    return Object.assign(defaultState(), parsed);
+    const base = defaultState();
+    // Merge settings explicitly: a shallow Object.assign would drop any key
+    // added after this state was saved, mid-draft.
+    return {
+      ...base,
+      ...parsed,
+      settings: { ...base.settings, ...(parsed.settings || {}) },
+    };
   } catch (e) {
     console.warn('Failed to load saved state, starting fresh', e);
     return defaultState();
