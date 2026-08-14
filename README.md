@@ -13,7 +13,7 @@ any server except live polling of the public Sleeper API if you connect it.
 2. Click **⚙ Setup**.
 3. Under **League Settings**, set your number of teams and roster spots
    (defaults match a standard 10-team, half-PPR league: `QB,RB,RB,WR,WR,TE,
-   FLEX,DST,K` + 6 bench).
+   FLEX,DST,K` + 7 bench).
 4. Set up your teams — either:
    - **Manual**: type team names in draft-slot order under "Teams & My Slot",
      click **Save Teams**, then pick which one is yours, or
@@ -43,6 +43,9 @@ running.
 2. Paste it into **Sleeper League ID** and click **Connect & Sync Teams**.
    This pulls your league's teams into the dashboard in the correct draft
    order automatically (no need to type team names by hand).
+   Connecting also pulls your league's roster shape and position limits
+   (e.g. QB 3, RB 6, WR 6, TE 3, K 2, DST 3) into Setup, so the
+   recommendations match your actual league rules. Both fields stay editable.
 3. Pick which synced team is yours from the **Which team is mine?** dropdown.
 4. Once your league's draft is live, the dashboard polls picks every ~6
    seconds and marks players off automatically, matching by name (and by
@@ -78,6 +81,15 @@ progress if you close the tab mid-draft.
 - **Best Available** — full rankings table, filterable by position
   (including a combined FLEX filter) and searchable by name/team, with tier
   dividers when your CSV includes a tier column.
+- **Best for my roster** — a sort mode that reorders the board by fit with the
+  team you're building: unfilled starters first, then bench depth, then K/DST.
+  A WHY badge on each row shows the reasoning. Players at one of your league's
+  position limits sort to the bottom, greyed out, rather than disappearing.
+  Scoring is `rank − bonus`, so an empty starting slot breaks close calls but
+  never overrides a genuinely better player.
+- **K and DST held back** — they stay at the bottom of the recommended order
+  until you have only enough picks left to fill them, so you never spend an
+  early pick on a kicker or finish the draft without a defense.
 - **My Team** — your roster slots filled in as you draft, with starting
   lineup needs called out (bench slots accept anyone).
 - **On the clock** — shows whose pick it is and how many picks until your
@@ -94,6 +106,9 @@ progress if you close the tab mid-draft.
   similar are close enough for draft-day purposes; treat QB value as
   slightly underrated by generic rankings since your league pays out 6 for
   passing TDs instead of the more common 4.
+- No bye-week conflict detection, tier-cliff bonuses, or modeling of other
+  teams' needs. The recommendation reflects your roster and your league's
+  position limits, nothing more.
 
 ## Local development
 
@@ -104,3 +119,15 @@ python3 -m http.server 8080
 ```
 
 then open `http://localhost:8080`.
+
+Tests use the Node 22 built-in runner — no dependencies, no install step:
+
+```
+node --test
+```
+
+`package.json` exists only to mark the source as ES modules for Node. The site
+itself still has no build step and no runtime dependencies.
+
+`node tools/calibrate.js` prints the same board scored at three different
+need-weights, for tuning `STARTER_BONUS`.
