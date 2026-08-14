@@ -77,7 +77,7 @@ function initSetupPanel() {
     }
     msg.textContent = 'Connecting…';
     try {
-      const { draft, teams } = await Sleeper.connectLeague(leagueId);
+      const { draft, teams, orderKnown } = await Sleeper.connectLeague(leagueId);
       St.setTeams(teams);
       St.updateSettings({
         numTeams: teams.length,
@@ -85,7 +85,9 @@ function initSetupPanel() {
         sleeperDraftId: draft.draft_id,
         sleeperSyncEnabled: true,
       });
-      msg.textContent = `Connected: ${teams.length} teams found. Pick "which team is mine" below, then start syncing picks.`;
+      msg.textContent = orderKnown
+        ? `Connected: ${teams.length} teams found, in draft order. Pick "which team is mine" below, then start syncing picks.`
+        : `Connected: ${teams.length} teams found. Your commissioner hasn't set the draft order yet, so these are listed in league order, NOT draft order — "on the clock" and snake order will be wrong until you reconnect after the order is posted. Team names and pick syncing work either way.`;
       startSleeperPolling();
     } catch (e) {
       msg.textContent = `Could not connect: ${e.message}. You can still use the dashboard manually.`;

@@ -40,22 +40,48 @@ async function connectLeague(leagueId) {
   const draftOrder = draft.draft_order || {}; // { user_id: slot(1-based) }
   const numTeams = draft.settings?.teams || league.total_rosters || users.length;
 
+  // Sleeper leaves draft_order null until the commissioner sets/randomizes the
+  // order — often not until shortly before the draft. Without it we can't know
+  // who picks where, but we can still show real team names (in roster order) so
+  // you can identify your team. Callers should re-sync once the order is set.
+  const orderKnown = Object.keys(draftOrder).length > 0;
+
+  const teamName = (user, slot) =>
+    user?.metadata?.team_name || user?.display_name || `Team ${slot}`;
+
   const teams = [];
-  for (let slot = 1; slot <= numTeams; slot++) {
-    const userId = Object.keys(draftOrder).find((uid) => draftOrder[uid] === slot);
-    const user = userId ? userById.get(userId) : null;
-    const roster = userId ? rosterByOwner.get(userId) : null;
-    teams.push({
-      id: roster ? `r${roster.roster_id}` : `slot${slot}`,
-      name: user ? (user.metadata?.team_name || user.display_name || `Team ${slot}`) : `Team ${slot}`,
-      slot: slot - 1, // 0-based
-      rosterId: roster ? roster.roster_id : null,
-      userId: userId || null,
-      isMe: false,
+  if (orderKnown) {
+    for (let slot = 1; slot <= numTeams; slot++) {
+      const userId = Object.keys(draftOrder).find((uid) => draftOrder[uid] === slot);
+      const user = userId ? userById.get(userId) : null;
+      const roster = userId ? rosterByOwner.get(userId) : null;
+      teams.push({
+        id: roster ? `r${roster.roster_id}` : `slot${slot}`,
+        name: teamName(user, slot),
+        slot: slot - 1, // 0-based
+        rosterId: roster ? roster.roster_id : null,
+        userId: userId || null,
+        isMe: false,
+      });
+    }
+  } else {
+    // Provisional: real names, ordered by roster_id (stable and matches how
+    // Sleeper lists the league), with slots filled in once the order exists.
+    const byRosterId = [...rosters].sort((a, b) => a.roster_id - b.roster_id);
+    byRosterId.forEach((roster, i) => {
+      const user = userById.get(roster.owner_id);
+      teams.push({
+        id: `r${roster.roster_id}`,
+        name: teamName(user, i + 1),
+        slot: i, // provisional — real slot unknown until draft_order is set
+        rosterId: roster.roster_id,
+        userId: roster.owner_id || null,
+        isMe: false,
+      });
     });
   }
 
-  return { league, draft, teams };
+  return { league, draft, teams, orderKnown };
 }
 
 async function fetchDraftPicks(draftId) {
