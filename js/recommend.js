@@ -49,8 +49,50 @@ function rosterState(rosterSpots = [], myPlayers = []) {
   };
 }
 
+// Rank of an unranked player: sorts below every ranked one but stays finite so
+// arithmetic and comparisons never produce NaN.
+const UNRANKED = 9999;
+
+// Scores one available player against the roster snapshot.
+// Lower score is a better pick. Excluded players are never draftable.
+// `weights` overrides the tuning constants. It exists so the calibration script
+// can exercise this exact function at several bonus values instead of keeping a
+// second copy of the math that could drift out of agreement with it.
+function scorePlayer(player, state, limits = {}, weights = {}) {
+  const starterBonus = weights.starterBonus ?? STARTER_BONUS;
+  const flexBonus = weights.flexBonus ?? FLEX_BONUS;
+  const pos = player.pos || '';
+  const rank = Number.isFinite(player.rank) ? player.rank : UNRANKED;
+
+  // Roster rules come first: an open slot cannot be filled by a player the
+  // league forbids, so exclusion is checked before any bonus.
+  const limit = limits[pos];
+  if (limit !== undefined && (state.posCounts[pos] || 0) >= limit) {
+    return { score: Infinity, reason: `${pos} LIMIT (${limit})`, excluded: true };
+  }
+
+  if (KDEF_POSITIONS.includes(pos)) {
+    if (state.kdefUrgent && (state.openStarters[pos] || 0) > 0) {
+      return { score: rank - starterBonus, reason: `FILLS ${pos}`, excluded: false };
+    }
+    return { score: rank + KDEF_PENALTY, reason: 'WAIT', excluded: false };
+  }
+
+  if ((state.openStarters[pos] || 0) > 0) {
+    return { score: rank - starterBonus, reason: `FILLS ${pos}`, excluded: false };
+  }
+
+  if (state.openFlex > 0 && FLEX_ELIGIBLE.includes(pos)) {
+    return { score: rank - flexBonus, reason: 'FILLS FLEX', excluded: false };
+  }
+
+  return { score: rank, reason: 'BENCH', excluded: false };
+}
+
 export {
   rosterState,
+  scorePlayer,
+  UNRANKED,
   STARTER_BONUS,
   FLEX_BONUS,
   KDEF_PENALTY,
