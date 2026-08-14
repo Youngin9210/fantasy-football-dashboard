@@ -1,5 +1,7 @@
 // CSV parsing + flexible rankings import (FantasyPros export or custom CSV).
 
+import { normalizePos } from './positions.js';
+
 // Minimal RFC4180-ish CSV parser: handles quoted fields with embedded commas/quotes/newlines.
 function parseCsv(text) {
   const rows = [];
@@ -71,13 +73,6 @@ function matchColumn(headers) {
   return map;
 }
 
-function cleanPos(raw) {
-  if (!raw) return '';
-  // FantasyPros sometimes formats position as "RB1", "WR12" etc.
-  const m = raw.trim().toUpperCase().match(/^([A-Z]+)/);
-  return m ? m[1] : raw.trim().toUpperCase();
-}
-
 function cleanBye(raw) {
   if (!raw) return null;
   const m = String(raw).match(/\d+/);
@@ -111,7 +106,7 @@ function parseRankingsCsv(text) {
       tier: colMap.tier !== undefined ? (parseInt(r[colMap.tier], 10) || r[colMap.tier] || null) : null,
       name,
       team: colMap.team !== undefined ? (r[colMap.team] || '').trim().toUpperCase() : '',
-      pos: colMap.pos !== undefined ? cleanPos(r[colMap.pos]) : '',
+      pos: colMap.pos !== undefined ? normalizePos(r[colMap.pos]) : '',
       bye: colMap.bye !== undefined ? cleanBye(r[colMap.bye]) : null,
       adp: colMap.adp !== undefined ? parseFloat(r[colMap.adp]) || null : null,
       drafted: false,

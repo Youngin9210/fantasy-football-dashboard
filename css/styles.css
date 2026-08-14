@@ -496,3 +496,50 @@ table.players tr.tier-start td {
   padding: 1px 4px;
   margin-left: 4px;
 }
+
+/* --- Recommendation sort --- */
+/* Token note: this stylesheet has no --accent/--panel-2/--danger. The active
+   state reuses the .pos-filter-btn.active idiom (inverted text/page colors),
+   and the badge colors reuse the existing status tokens. */
+.sort-toggle { display: flex; gap: 4px; flex: none; }
+.sort-toggle .btn.active {
+  background: var(--text-primary);
+  border-color: var(--text-primary);
+  color: var(--page);
+}
+
+.why-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: var(--surface-3);
+  color: var(--text-secondary);
+}
+.why-badge.fills { background: var(--status-good); color: #fff; }
+.why-badge.wait { opacity: 0.55; }
+.why-badge.limit { background: var(--status-critical); color: #fff; }
+
+table.players tr.need-notice td {
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  /* --status-warning is the same amber in both themes, so this stays a fixed
+     dark ink rather than a theme token: --page inverts to near-white in light
+     mode (1.7:1 on amber) and --text-primary inverts to white in dark mode. */
+  color: #0b0b0b;
+  background: var(--status-warning);
+}
+
+table.players tr.limit-excluded { opacity: 0.45; }
+table.players tr.limit-divider td {
+  padding: 4px 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-top: 2px solid var(--baseline);
+}
