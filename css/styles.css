@@ -527,7 +527,10 @@ table.players tr.need-notice td {
   padding: 8px;
   font-size: 12px;
   font-weight: 600;
-  color: var(--page);
+  /* --status-warning is the same amber in both themes, so this stays a fixed
+     dark ink rather than a theme token: --page inverts to near-white in light
+     mode (1.7:1 on amber) and --text-primary inverts to white in dark mode. */
+  color: #0b0b0b;
   background: var(--status-warning);
 }
 
