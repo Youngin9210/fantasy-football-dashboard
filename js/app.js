@@ -4,24 +4,10 @@ import * as Sleeper from './sleeper.js';
 import { pickToSlotIndex, pickToRound, nextPickForSlot, assignRosterSlots, computeNeeds } from './draft.js';
 import { rosterState, recommendOrder } from './recommend.js';
 import { normalizePos } from './positions.js';
+import { parseLimitsInput, formatLimits } from './limits.js';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K'];
 const FLEX_POS = ['RB', 'WR', 'TE'];
-
-// "QB:3,RB:6" -> {QB: 3, RB: 6}. Tolerates spaces and trailing commas.
-function parseLimitsInput(text) {
-  const limits = {};
-  for (const part of String(text || '').split(',')) {
-    const [pos, max] = part.split(':').map((x) => (x || '').trim().toUpperCase());
-    const n = parseInt(max, 10);
-    if (pos && Number.isFinite(n) && n > 0) limits[pos] = n;
-  }
-  return limits;
-}
-
-function formatLimits(limits) {
-  return Object.entries(limits || {}).map(([pos, max]) => `${pos}:${max}`).join(',');
-}
 
 let currentFilter = 'ALL';
 let currentSearch = '';
@@ -310,8 +296,9 @@ function renderPlayersBody() {
 
   // Recommendations only make sense once we know whose roster to build, so
   // without a chosen team this falls back to plain rank order.
+  const recommending = useNeed && settings.myTeamId;
   let scored;
-  if (useNeed && settings.myTeamId) {
+  if (recommending) {
     const mine = players
       .filter((p) => p.drafted && p.draftedByTeamId === settings.myTeamId)
       .sort((a, b) => (a.pickNo || 0) - (b.pickNo || 0));
@@ -327,9 +314,9 @@ function renderPlayersBody() {
 
   tbody.innerHTML = scored
     .map(({ player: p, reason, excluded }) => {
-      // Tier dividers are suppressed in need mode: they only mean something
-      // when the board is in rank order.
-      const tierStart = !useNeed && p.tier !== undefined && p.tier !== null && p.tier !== lastTier;
+      // Tier dividers are suppressed while recommending: they only mean
+      // something when the board is in plain rank order.
+      const tierStart = !recommending && p.tier !== undefined && p.tier !== null && p.tier !== lastTier;
       lastTier = p.tier;
       const teamName = p.draftedByTeamId ? (teams.find((t) => t.id === p.draftedByTeamId)?.name || 'Unknown') : '';
       const rowClasses = [
