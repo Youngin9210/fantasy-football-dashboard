@@ -1086,6 +1086,53 @@ import { pickToSlotIndex, pickToRound, nextPickForSlot, assignRosterSlots, compu
 import { rosterState, recommendOrder } from './recommend.js';
 ```
 
+- [ ] **Step 5b: Fix raw `DEF` leaking into saved state**
+
+Found during Task 6 review. When live sync drafts a player that isn't in your
+imported rankings, `app.js` adds them via `addManualPlayer` using Sleeper's raw
+position string. Sleeper spells team defenses `DEF`, so a raw `DEF` reaches
+`state.players`. That player then never fills a `DST` roster slot (matching is
+exact) and never counts toward the `DST` position limit — both of which this
+feature depends on.
+
+Add `normalizePos` to the import added in Step 5:
+
+```js
+import { normalizePos } from './positions.js';
+```
+
+Then change line 178 from:
+
+```js
+            pos: (meta.position || '').toUpperCase(),
+```
+
+to:
+
+```js
+            pos: normalizePos(meta.position),
+```
+
+`normalizePos` already uppercases and trims, so it fully replaces the previous
+expression.
+
+- [ ] **Step 5c: Test the fix**
+
+Add to `test/positions.test.js`:
+
+```js
+test('a Sleeper DEF pick normalizes to DST for roster and limit matching', () => {
+  // app.js previously stored Sleeper's raw 'DEF' via addManualPlayer, which
+  // silently broke both DST slot-filling and the DST position limit.
+  assert.equal(normalizePos('DEF'), 'DST');
+  const { slots } = assignRosterSlots(['DST'], [{ pos: normalizePos('DEF'), name: 'Ravens D/ST' }]);
+  assert.equal(slots[0].player.name, 'Ravens D/ST');
+});
+```
+
+Run: `node --test test/positions.test.js`
+Expected: PASS
+
 - [ ] **Step 6: Add position-limit parsing and wire the Setup field**
 
 Add near the top of `js/app.js`, after the `FLEX_POS` constant:
