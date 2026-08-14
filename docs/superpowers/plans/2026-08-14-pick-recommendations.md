@@ -1338,15 +1338,15 @@ Kyle was unsure whether 12 is the right weight. This produces the evidence to
 decide, rather than leaving it a guess.
 
 **Files:**
-- Create: `test/calibrate.js`
+- Create: `tools/calibrate.js`
 
 **Interfaces:**
 - Consumes: `rosterState`, `recommendOrder` from `js/recommend.js`, using the `weights` parameter added in Task 3.
-- Produces: nothing — a diagnostic script, not part of the suite. It is named `.js` rather than `.test.js` so `node --test` does not pick it up.
+- Produces: nothing — a diagnostic script, not part of the suite. It lives in `tools/`, NOT `test/`: Node's default test discovery picks up EVERY `.js` file inside a directory named `test`, regardless of the `.test.js` suffix, so a diagnostic placed there would run as part of the suite and dump its output into the TAP stream.
 
 - [ ] **Step 1: Write the calibration script**
 
-Create `test/calibrate.js`:
+Create `tools/calibrate.js`:
 
 ```js
 // Diagnostic, not a test. Prints the same mid-draft board scored at three
@@ -1355,7 +1355,7 @@ Create `test/calibrate.js`:
 // Calls the real recommendOrder() with injected weights rather than re-deriving
 // the math, so what this prints is exactly what the app would show.
 //
-// Usage: node test/calibrate.js
+// Usage: node tools/calibrate.js
 import { rosterState, recommendOrder } from '../js/recommend.js';
 
 const SPOTS = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DST',
@@ -1401,14 +1401,18 @@ for (const bonus of [6, 12, 20]) {
 
 - [ ] **Step 2: Run it**
 
-Run: `node test/calibrate.js`
+Run: `node tools/calibrate.js`
 Expected: three ranked boards. Confirm that at 12 the open-TE and open-WR slots
 pull McBride and Waddle above the two RBs, while the RBs still beat Njoku at 55.
 
-- [ ] **Step 3: Confirm the suite still ignores it**
+- [ ] **Step 3: Confirm the suite ignores it**
 
 Run: `node --test`
-Expected: `calibrate.js` does not appear in the output.
+Expected: `calibrate.js` does not appear in the output, and the total test
+count is unchanged.
+
+This is why the file lives in `tools/` rather than `test/` — verified on Node
+v22.17.0 that a plain `.js` file inside `test/` IS collected by `node --test`.
 
 - [ ] **Step 4: Report the three boards to Kyle and confirm the weight**
 

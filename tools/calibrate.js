@@ -4,7 +4,7 @@
 // Calls the real recommendOrder() with injected weights rather than re-deriving
 // the math, so what this prints is exactly what the app would show.
 //
-// Usage: node test/calibrate.js
+// Usage: node tools/calibrate.js
 import { rosterState, recommendOrder } from '../js/recommend.js';
 
 const SPOTS = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DST',
