@@ -70,12 +70,22 @@ function getState() {
   return state;
 }
 
+// Clears draft progress only. The imported board is carried across with its
+// draft flags reset — the confirm dialog promises the rankings survive, and
+// this app ships with no built-in rankings, so losing them mid-draft is fatal.
 function resetDraft() {
   const settings = state.settings;
   const teams = state.teams;
+  const players = state.players.map((p) => ({
+    ...p,
+    drafted: false,
+    draftedByTeamId: null,
+    pickNo: null,
+  }));
   state = defaultState();
   state.settings = settings;
   state.teams = teams;
+  state.players = players;
   notify();
 }
 

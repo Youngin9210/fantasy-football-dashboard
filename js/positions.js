@@ -8,8 +8,13 @@
 function normalizePos(raw) {
   if (!raw) return '';
   const upper = String(raw).trim().toUpperCase();
-  if (upper === 'DEF' || upper === 'DST' || upper === 'D/ST') return 'DST';
-  if (upper === 'PK') return 'K';
+  // Prefix matches, not exact ones: FantasyPros writes positional ranks as
+  // "DST1" / "DEF1" / "D/ST1" / "PK1", and an exact check lets those leak
+  // through raw — such a player never fills the DST/K slot, never counts
+  // toward its limit, and slips past the K/DST hold-back as bench depth.
+  // Anchored so IDP's D/DL/DB and superflex's SUPER_FLEX are untouched.
+  if (/^D\/?ST/.test(upper) || /^DEF/.test(upper)) return 'DST';
+  if (/^PK/.test(upper)) return 'K';
   // FantasyPros formats positions as "RB1", "WR12" — keep the leading letters.
   const m = upper.match(/^([A-Z]+)/);
   return m ? m[1] : upper;

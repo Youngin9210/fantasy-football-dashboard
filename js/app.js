@@ -3,11 +3,10 @@ import { parseRankingsCsv } from './csv.js';
 import * as Sleeper from './sleeper.js';
 import { pickToSlotIndex, pickToRound, nextPickForSlot, assignRosterSlots, computeNeeds } from './draft.js';
 import { rosterState, recommendOrder } from './recommend.js';
-import { normalizePos } from './positions.js';
+import { normalizePos, FLEX_ELIGIBLE } from './positions.js';
 import { parseLimitsInput, formatLimits } from './limits.js';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K'];
-const FLEX_POS = ['RB', 'WR', 'TE'];
 
 let currentFilter = 'ALL';
 let currentSearch = '';
@@ -145,11 +144,7 @@ function initSetupPanel() {
   document.getElementById('resetDraftBtn').addEventListener('click', () => {
     if (confirm('Reset the draft? This clears drafted status and pick history but keeps your rankings and teams.')) {
       processedPickNos = new Set();
-      St.getState().players.forEach((p) => {
-        p.drafted = false;
-        p.draftedByTeamId = null;
-        p.pickNo = null;
-      });
+      // St.resetDraft() carries the players across and clears their draft flags.
       St.resetDraft();
     }
   });
@@ -272,7 +267,7 @@ function filteredPlayers() {
   });
   if (currentFilter !== 'ALL') {
     if (currentFilter === 'FLEX') {
-      list = list.filter((p) => FLEX_POS.includes(p.pos));
+      list = list.filter((p) => FLEX_ELIGIBLE.includes(p.pos));
     } else {
       list = list.filter((p) => p.pos === currentFilter || (currentFilter === 'DST' && p.pos === 'DEF'));
     }
@@ -312,7 +307,14 @@ function renderPlayersBody() {
   let lastTier = undefined;
   let dividerShown = false;
 
-  tbody.innerHTML = scored
+  // Never fail silently: with need sort on but no team chosen, the board is
+  // plain rank order and the WHY column is blank. Say so, or the user drafts a
+  // round believing they're following recommendations that were never computed.
+  const notice = useNeed && !settings.myTeamId
+    ? `<tr class="need-notice"><td colspan="9">${escapeHtml('Pick which team is yours in Setup to enable recommendations — showing plain rank order.')}</td></tr>`
+    : '';
+
+  tbody.innerHTML = notice + scored
     .map(({ player: p, reason, excluded }) => {
       // Tier dividers are suppressed while recommending: they only mean
       // something when the board is in plain rank order.

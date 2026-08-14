@@ -523,6 +523,14 @@ table.players tr.tier-start td {
 .why-badge.wait { opacity: 0.55; }
 .why-badge.limit { background: var(--status-critical); color: #fff; }
 
+table.players tr.need-notice td {
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--page);
+  background: var(--status-warning);
+}
+
 table.players tr.limit-excluded { opacity: 0.45; }
 table.players tr.limit-divider td {
   padding: 4px 8px;

@@ -13,7 +13,7 @@ any server except live polling of the public Sleeper API if you connect it.
 2. Click **⚙ Setup**.
 3. Under **League Settings**, set your number of teams and roster spots
    (defaults match a standard 10-team, half-PPR league: `QB,RB,RB,WR,WR,TE,
-   FLEX,DST,K` + 7 bench).
+   FLEX,K,DST` + 7 bench, 16 spots total).
 4. Set up your teams — either:
    - **Manual**: type team names in draft-slot order under "Teams & My Slot",
      click **Save Teams**, then pick which one is yours, or

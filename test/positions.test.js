@@ -22,6 +22,29 @@ test('strips FantasyPros positional ranks', () => {
   assert.equal(normalizePos('QB'), 'QB');
 });
 
+// A suffixed defense/kicker that leaks through uncanonicalized never fills its
+// roster slot, never counts toward its position limit, and — worst — dodges the
+// K/DST hold-back entirely, sorting above correctly-tagged kickers and defenses.
+test('canonicalizes defense and kicker spellings that carry a positional rank', () => {
+  assert.equal(normalizePos('DST1'), 'DST');
+  assert.equal(normalizePos('DEF1'), 'DST');
+  assert.equal(normalizePos('D/ST1'), 'DST');
+  assert.equal(normalizePos('PK1'), 'K');
+  assert.equal(normalizePos('def2'), 'DST');
+  assert.equal(normalizePos(' D/ST3 '), 'DST');
+  assert.equal(normalizePos('K1'), 'K');
+});
+
+// The regexes are anchored prefix matches, so nearby real positions must not be
+// swallowed: IDP leagues use D/DL/DB, superflex leagues use SUPER_FLEX.
+test('leaves other positions that start with D or P alone', () => {
+  assert.equal(normalizePos('D'), 'D');
+  assert.equal(normalizePos('DL'), 'DL');
+  assert.equal(normalizePos('DB'), 'DB');
+  assert.equal(normalizePos('P'), 'P');
+  assert.equal(normalizePos('SUPER_FLEX'), 'SUPER');
+});
+
 test('returns empty string for missing input', () => {
   assert.equal(normalizePos(''), '');
   assert.equal(normalizePos(null), '');

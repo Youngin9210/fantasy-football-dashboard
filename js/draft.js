@@ -66,4 +66,4 @@ function computeNeeds(slots) {
   return needs;
 }
 
-export { pickToSlotIndex, pickToRound, nextPickForSlot, assignRosterSlots, computeNeeds, FLEX_ELIGIBLE };
+export { pickToSlotIndex, pickToRound, nextPickForSlot, assignRosterSlots, computeNeeds };
