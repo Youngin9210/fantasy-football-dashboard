@@ -1,5 +1,7 @@
 // Snake draft order math + roster slot assignment / needs calculation.
 
+import { FLEX_ELIGIBLE } from './positions.js';
+
 // slotIndex is 0-based (0 = draft slot 1). Round is 1-based.
 function pickToSlotIndex(pickNo, numTeams) {
   const round = Math.ceil(pickNo / numTeams);
@@ -21,8 +23,6 @@ function nextPickForSlot(fromPickNo, slotIndex, numTeams) {
   }
   return null;
 }
-
-const FLEX_ELIGIBLE = ['RB', 'WR', 'TE'];
 
 // Assigns a team's drafted players (in draft order) to roster slots.
 // rosterSpots: array of labels like ['QB','RB','RB','WR','WR','TE','FLEX','DST','K','BN',...]
