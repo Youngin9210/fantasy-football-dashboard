@@ -67,7 +67,7 @@ export function SetupPanel({ onConnected, onDisconnect }) {
     St.updateSettings({ numTeams: names.length });
   }
 
-  return html`<section class="setup-panel">
+  return html`<section class="setup-panel" id="setupPanel">
     <div class="setup-grid">
       <div class="setup-card">
         <h3>League Settings</h3>
@@ -119,7 +119,7 @@ export function SetupPanel({ onConnected, onDisconnect }) {
             ${teams.map((t) => html`<option key=${t.id} value=${t.id}>${t.name}</option>`)}
           </select>
         </div>
-        <button class="btn" onClick=${saveTeams}>Save Teams</button>
+        <button class="btn" id="applyTeamsBtn" onClick=${saveTeams}>Save Teams</button>
       </div>
 
       <div class="setup-card">
@@ -130,9 +130,9 @@ export function SetupPanel({ onConnected, onDisconnect }) {
             value=${leagueId} onInput=${(e) => setLeagueId(e.target.value)} />
           <div class="hint">Found in your league's Sleeper URL: ${SLEEPER_URL_HINT}</div>
         </div>
-        <button class="btn" onClick=${connectSleeper}>Connect & Sync Teams</button>
-        <button class="btn small" onClick=${() => { onDisconnect(); setSleeperMsg('Disconnected. Live sync paused.'); }}>Disconnect</button>
-        <div class="hint">${sleeperMsg}</div>
+        <button class="btn" id="connectSleeperBtn" onClick=${connectSleeper}>Connect & Sync Teams</button>
+        <button class="btn small" id="disconnectSleeperBtn" onClick=${() => { onDisconnect(); setSleeperMsg('Disconnected. Live sync paused.'); }}>Disconnect</button>
+        <div class="hint" id="sleeperConnectMsg">${sleeperMsg}</div>
       </div>
 
       <div class="setup-card">
@@ -147,17 +147,17 @@ export function SetupPanel({ onConnected, onDisconnect }) {
           <textarea id="csvPaste" placeholder="Rank,Player Name,Team,Pos,Bye Week,Tier"
             value=${csvPaste} onInput=${(e) => setCsvPaste(e.target.value)}></textarea>
         </div>
-        <button class="btn primary" onClick=${importCsv}>Import Rankings</button>
-        <div class="warning-list">${csvMsg}</div>
+        <button class="btn primary" id="importCsvBtn" onClick=${importCsv}>Import Rankings</button>
+        <div class="warning-list" id="csvWarnings">${csvMsg}</div>
       </div>
 
       <div class="setup-card">
         <h3>Danger Zone</h3>
-        <button class="btn danger" onClick=${() => {
+        <button class="btn danger" id="resetDraftBtn" onClick=${() => {
           if (confirm('Reset the draft? This clears drafted status and pick history but keeps your rankings and teams.')) St.resetDraft();
         }}>Reset Draft (keep rankings & teams)</button>
         <br /><br />
-        <button class="btn danger" onClick=${() => {
+        <button class="btn danger" id="resetAllBtn" onClick=${() => {
           if (confirm('Reset EVERYTHING (teams, rankings, draft progress, Sleeper connection)? This cannot be undone.')) {
             onDisconnect();
             St.resetAll();
