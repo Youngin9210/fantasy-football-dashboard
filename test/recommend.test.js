@@ -184,9 +184,13 @@ test('orders by score, excluded players last', () => {
 
 test('ties break toward the better rank', () => {
   const state = rosterState(SPOTS, []);
-  const ranked = recommendOrder([p('WR', 30), p('RB', 30)], state, LIMITS);
-  assert.equal(ranked[0].score, ranked[1].score);
-  assert.equal(ranked[0].player.rank, 30);
+  // Equal scores by construction: WR 36 fills a starting slot (36-12=24) and
+  // an unrostered-position player at 24 gets no bonus (24). Different ranks,
+  // so the tie-break direction is actually exercised.
+  const ranked = recommendOrder([p('WR', 36), { pos: 'P', rank: 24, name: 'Punter' }], state, LIMITS);
+  assert.equal(ranked[0].score, ranked[1].score, 'scores must actually tie');
+  assert.equal(ranked[0].player.rank, 24, 'better raw rank wins the tie');
+  assert.equal(ranked[1].player.rank, 36);
 });
 
 test('two excluded players still sort by rank without NaN', () => {
