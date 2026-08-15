@@ -133,7 +133,7 @@ are not persisted. `sortMode` stays in `settings` because it *is* persisted.
 
 ## Behavior changes
 
-Exactly three, all previously triaged as ship-able and approved for inclusion:
+Four, each individually approved by the owner:
 
 1. In need mode only, drafted rows render **above** the "At position limit"
    divider rather than below it, so they no longer imply they are at a limit.
@@ -153,9 +153,20 @@ Everything else is markup-for-markup identical.
 ## Error handling
 
 A component that throws under Preact renders nothing — a blank page mid-draft
-is the worst available failure mode for this app. `App` therefore installs
-`useErrorBoundary` at the root, catching render errors and displaying the error
-message with a reload affordance rather than an empty document.
+is the worst available failure mode for this app. A `Root` component in
+`js/main.js` therefore installs `useErrorBoundary` **above** `<App/>`, rendering
+`js/ui/ErrorFallback.js` with the error message and a reload affordance instead
+of an empty document.
+
+The boundary must sit above `App`, not inside it: Preact's `_catchError` walks
+up from the throwing vnode's parent, so a boundary installed within a component
+cannot catch that component's own render throw. Task 1's review demonstrated
+this empirically — with the boundary inside `App`, an `App` render throw
+produced a completely blank page. `useTheme` is called in `Root` for the same
+reason, so the fallback renders in the user's chosen theme.
+
+Note that no boundary in Preact or React catches errors thrown from event
+handlers; those log to the console rather than blanking the page.
 
 Existing degraded-input handling is unchanged: no team selected still shows the
 need-mode notice, empty rankings still render an empty table, and a corrupt
