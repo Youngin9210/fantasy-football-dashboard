@@ -55,14 +55,16 @@ export function SetupPanel({ setupOpen, onConnected, onDisconnect }) {
     if (players.length === 0) return setCsvMsg(warnings.join(' ') || 'No players found in CSV.');
     St.setPlayers(players.map((p) => Object.assign({}, p, { id: St.nextId('p') })));
     // setPlayers swaps the whole board for freshly-created player objects, none
-    // of them drafted — but it leaves `picks` and `pickCounter` alone. With live
-    // sync running that is corrupting: the draft log still lists every pick, yet
-    // the players those picks took are available again, and recommend.js will
-    // happily recommend someone who is already off the board. Polling cannot
-    // repair it either, because those pick_nos are still in `picks` and so are
-    // skipped as already-processed on every later tick. resetDraft clears picks
-    // while keeping the rankings just imported and the teams, so the very next
-    // poll refills the board against the new player list. Sync off = no repair
+    // of them drafted — but it leaves `picks` and `pickCounter` alone. Dedupe
+    // itself is fine with that: it's keyed on player IDENTITY read off
+    // `state.players`, so the next poll would refill the new rankings correctly
+    // either way. What's left corrupted is the draft LOG: the old `picks`
+    // entries still point at player IDs from the array that just got replaced —
+    // orphaned, unrenderable — and pickCounter still holds the old count, so
+    // freshly re-imported picks would stack on top of that stale history instead
+    // of starting clean. resetDraft clears picks/pickCounter while keeping the
+    // rankings just imported and the teams, so the very next poll refills the
+    // board against the new player list with a clean log. Sync off = no repair
     // mechanism, so leave the manual draft alone and let the user reset if they
     // want to.
     //

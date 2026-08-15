@@ -378,6 +378,59 @@ test('a defense undrafted by ✕ stays undrafted while sync runs', () => {
   assert.equal(St.getState().players.length, 3, 'no manual clone');
 });
 
+// ------------------------------------------------------ 8b. defense with no name overlap
+//
+// Test 8 above ('Ravens'/BAL board vs 'Baltimore'/'Ravens'/BAL pick) still
+// passes even if the whole isDefense() branch is deleted from pickMatchesPlayer:
+// the pick's synthesized full name "Baltimore Ravens" happens to CONTAIN the
+// board row's bare "Ravens", so the non-defense fallback's bidirectional
+// `includes` catches it by accident and the defense branch is never actually
+// exercised. This fixture closes that hole: Sleeper's own name fields for a
+// defense often share nothing at all with what a board calls it, so only the
+// team-abbreviation probe can recognise the pick as already drafted.
+test('a defense whose Sleeper name shares nothing with the board name is still deduped by team', () => {
+  seedBoard();
+  St.addPlayers([player('d1', 6, '49ers D/ST', 'SF', 'DST')]);
+  const defPick = sleeperPick(1, 1, 'San Francisco', '', 'DEF', 'SF');
+
+  applyPicks([defPick]);
+  assert.equal(byId('d1').drafted, true, 'the defense imported onto the ranked DST');
+  assert.equal(St.getState().players.length, 3);
+
+  applyPicks([defPick]);
+  applyPicks([defPick]);
+
+  const s = St.getState();
+  assert.equal(s.picks.length, 1, 'later ticks do not re-import the defense');
+  assert.equal(s.players.length, 3,
+    'and do not clone it as a manual player — only the team probe can recognise this pick');
+});
+
+// --------------------------------------------- 8c. loose name match is load-bearing
+//
+// A board that lists only a last name against Sleeper's first+last metadata:
+// exact equality between the two normalized strings never matches, so what
+// recognises the pick as already-drafted on the second tick is exactly the
+// bidirectional `includes` pickMatchesPlayer deliberately mirrors from
+// matchPickToPlayer (which is what matched the pick onto this player in the
+// first place, for the same reason).
+test('a pick whose full name only contains the board name is matched, not cloned', () => {
+  seedBoard();
+  St.addPlayers([player('p6', 6, 'Harrison', 'ARI', 'WR')]);
+  const pick = sleeperPick(1, 1, 'Marvin', 'Harrison', 'WR', 'ARI');
+
+  applyPicks([pick]);
+  assert.equal(byId('p6').drafted, true,
+    'precondition: matched via the same loose includes matchPickToPlayer uses');
+  assert.equal(St.getState().players.length, 3);
+
+  applyPicks([pick]); // the next 6-second tick
+
+  const s = St.getState();
+  assert.equal(s.picks.length, 1, 'the second tick does not re-import');
+  assert.equal(s.players.length, 3, 'no manual clone of Marvin Harrison');
+});
+
 // ------------------------------------------------------- suppression scoping
 //
 // Suppression carries no draft ID, so without beginPolling dropping it on a
