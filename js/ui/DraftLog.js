@@ -1,17 +1,19 @@
 import { html } from '../vendor/preact.js';
 import * as St from '../state.js';
 import { useStore } from './useStore.js';
-import { suppressPick } from './useSleeperSync.js';
+import { suppressPlayer } from './useSleeperSync.js';
 
-// St.undoLastPick pops the END of state.picks, so read the pick number off the
-// live store the same way rather than off the render-sorted copy. Recording it
-// first is what stops the next Sleeper poll from re-importing the pick and
-// undoing the undo.
+// St.undoLastPick pops the END of state.picks, so read that pick off the live
+// store the same way rather than off the render-sorted copy. Recording its
+// PLAYER first is what stops the next Sleeper poll from re-importing him and
+// undoing the undo — and it must be the player rather than last.pickNo,
+// because the last pick is often a MANUAL one whose number Sleeper will hand
+// to somebody else entirely.
 function undoLastPick() {
-  const picks = St.getState().picks;
+  const { picks, players } = St.getState();
   const last = picks[picks.length - 1];
   if (!last) return;
-  suppressPick(last.pickNo);
+  suppressPlayer(players.find((p) => p.id === last.playerId));
   St.undoLastPick();
 }
 
