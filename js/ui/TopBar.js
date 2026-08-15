@@ -5,7 +5,7 @@ import { useStore } from './useStore.js';
 function ClockWidget() {
   const { settings, teams, pickCounter } = useStore();
   if (teams.length === 0) {
-    return html`<div class="clock-widget"><span class="clock-pill">Set up teams to see draft order</span></div>`;
+    return html`<div class="clock-widget" id="clockWidget"><span class="clock-pill">Set up teams to see draft order</span></div>`;
   }
 
   const nextPickNo = pickCounter + 1;
@@ -22,7 +22,7 @@ function ClockWidget() {
       : html`<span class="clock-pill">${picksUntil} pick${picksUntil === 1 ? '' : 's'} until your turn</span>`;
   }
 
-  return html`<div class="clock-widget">
+  return html`<div class="clock-widget" id="clockWidget">
     <span class="clock-pill">Pick ${nextPickNo} · Rd ${round} · On the clock: <strong>${onClockTeam ? onClockTeam.name : '—'}</strong></span>
     ${turnPill}
   </div>`;
@@ -30,8 +30,8 @@ function ClockWidget() {
 
 function SyncStatus({ status }) {
   const { settings } = useStore();
-  if (!settings.sleeperSyncEnabled) return html`<div class="sync-status"></div>`;
-  return html`<div class="sync-status">
+  if (!settings.sleeperSyncEnabled) return html`<div class="sync-status" id="syncStatus"></div>`;
+  return html`<div class="sync-status" id="syncStatus">
     <span class="sync-dot ${status.ok ? 'ok' : 'error'}"></span>
     <span>${status.ok ? 'Sleeper synced' : `Sleeper sync error: ${status.error}`}</span>
   </div>`;
@@ -43,8 +43,8 @@ export function TopBar({ onToggleSetup, syncStatus, toggleTheme }) {
     <${ClockWidget} />
     <${SyncStatus} status=${syncStatus} />
     <div class="topbar-actions">
-      <button class="btn small" title="Toggle light/dark" onClick=${toggleTheme}>🌓</button>
-      <button class="btn small" onClick=${onToggleSetup}>⚙ Setup</button>
+      <button class="btn small" id="themeToggle" title="Toggle light/dark" onClick=${toggleTheme}>🌓</button>
+      <button class="btn small" id="settingsBtn" onClick=${onToggleSetup}>⚙ Setup</button>
     </div>
   </header>`;
 }

@@ -52,14 +52,14 @@ function PlayerRow({ entry, teams, draftForId, tierStart }) {
     <td>${reason ? html`<span class="why-badge ${whyClass(reason)}">${reason}</span>` : null}</td>
     <td class="drafted-by">${p.drafted ? `#${p.pickNo} · ${teamName}` : ''}</td>
     <td>${p.drafted
-      ? html`<button class="btn small danger" onClick=${() => {
+      ? html`<button class="btn small danger" data-undraft=${p.id} onClick=${() => {
           // ✕ undrafts a player, but suppression is keyed by pick number — take
           // it off the player before undrafting clears it, or a live Sleeper
           // sync re-imports this pick on its next tick.
           suppressPick(p.pickNo);
           St.undraftPlayer(p.id);
         }}>✕</button>`
-      : html`<button class="btn small primary" onClick=${() => St.draftPlayer(p.id, draftForId || null)}>Draft</button>`}</td>
+      : html`<button class="btn small primary" data-draft=${p.id} onClick=${() => St.draftPlayer(p.id, draftForId || null)}>Draft</button>`}</td>
   </tr>`;
 }
 
@@ -106,19 +106,19 @@ export function PlayersTable({ filter, search, onFilter, onSearch, draftForId, o
     <div class="controls">
       <input id="searchBox" placeholder="Search players…" value=${search}
         onInput=${(e) => onSearch(e.target.value)} />
-      <div class="sort-toggle">
-        <button class="btn small ${!useNeed ? 'active' : ''}"
+      <div class="sort-toggle" id="sortToggle">
+        <button class="btn small ${!useNeed ? 'active' : ''}" data-sort="rank"
           onClick=${() => St.updateSettings({ sortMode: 'rank' })}>By rank</button>
-        <button class="btn small ${useNeed ? 'active' : ''}"
+        <button class="btn small ${useNeed ? 'active' : ''}" data-sort="need"
           onClick=${() => St.updateSettings({ sortMode: 'need' })}>Best for my roster</button>
       </div>
-      <div class="pos-filters">
+      <div class="pos-filters" id="posFilters">
         ${POSITIONS.map((pos) => html`<button class="pos-filter-btn ${pos === filter ? 'active' : ''}"
           onClick=${() => onFilter(pos)}>${pos}</button>`)}
       </div>
       <span style="flex:none; display:flex; align-items:center; gap:6px;">
         <label class="hint" style="margin:0;">Draft pick for:</label>
-        <select class="team-select" value=${draftForId} onChange=${(e) => onDraftFor(e.target.value)}>
+        <select class="team-select" id="draftForSelect" value=${draftForId} onChange=${(e) => onDraftFor(e.target.value)}>
           ${teams.map((t) => html`<option key=${t.id} value=${t.id}>${t.name}</option>`)}
         </select>
       </span>
@@ -129,7 +129,7 @@ export function PlayersTable({ filter, search, onFilter, onSearch, draftForId, o
           <th>Rank</th><th>Player</th><th>Pos</th><th>Team</th>
           <th>Bye</th><th>ADP</th><th>Why</th><th>Status</th><th></th>
         </tr></thead>
-        <tbody>
+        <tbody id="playersBody">
           ${useNeed && !settings.myTeamId
             ? html`<tr class="need-notice"><td colspan="9">Pick which team is yours in Setup to enable recommendations — showing plain rank order.</td></tr>`
             : null}

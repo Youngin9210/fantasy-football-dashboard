@@ -22,9 +22,9 @@ export function DraftLog() {
   return html`<div class="panel">
     <div class="panel-header">
       Draft Log
-      <button class="btn small danger" onClick=${undoLastPick}>Undo Last Pick</button>
+      <button class="btn small danger" id="undoBtn" onClick=${undoLastPick}>Undo Last Pick</button>
     </div>
-    <ul class="draft-log">
+    <ul class="draft-log" id="draftLog">
       ${ordered.map((pk) => {
         const player = players.find((p) => p.id === pk.playerId);
         const team = teams.find((t) => t.id === pk.teamId);

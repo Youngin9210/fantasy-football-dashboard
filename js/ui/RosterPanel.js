@@ -15,8 +15,8 @@ export function RosterPanel() {
   const needKeys = Object.keys(needs);
 
   return html`<div class="panel">
-    <div class="panel-header">My Team <span>${myTeam ? `— ${myTeam.name}` : ''}</span></div>
-    <ul class="roster-list">
+    <div class="panel-header">My Team <span id="myTeamName">${myTeam ? `— ${myTeam.name}` : ''}</span></div>
+    <ul class="roster-list" id="rosterList">
       ${slots.map((s) => html`<li key=${s.idx}>
         <span class="slot-label">${s.label}</span>
         ${s.player
@@ -24,9 +24,15 @@ export function RosterPanel() {
           : html`<span class="slot-empty">empty</span>`}
       </li>`)}
     </ul>
-    <div class="needs-row">
+    <div class="needs-row" id="needsRow">
       ${needKeys.length
-        ? html`Needs: ${needKeys.map((k) => html`<span key=${k}><span class="pos-badge ${k}">${k}</span>×${needs[k]} </span>`)}`
+        // flatMap, not map-into-a-wrapper: keying each item would need an
+        // element to hang the key on, and that extra <span> is a DOM
+        // difference against the vanilla build for no benefit. This list is
+        // homogeneous and stateless, so Preact's positional diffing is exactly
+        // right and keys buy nothing.
+        ? html`Needs: ${needKeys.flatMap((k) => [
+            html`<span class="pos-badge ${k}">${k}</span>`, `×${needs[k]} `])}`
         : 'All starting spots filled.'}
     </div>
   </div>`;
