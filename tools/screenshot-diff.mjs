@@ -52,13 +52,36 @@ const PREP_SOURCE = ENSURE_SETUP_OPEN_SOURCE + String.raw`
 // setup-panel state (approved behavior change #1: vanilla shows the panel on
 // every load, the rewrite only on an empty install) and reports the facts the
 // harness needs to know a real page was rendered.
+// Every element's border box, keyed by its position in the tree plus a short
+// identity. A pixel count says how much changed; this says WHAT moved, which
+// is the difference between "a button shifted 4px" and "the same glyphs landed
+// on slightly different subpixels". dom-diff.mjs compares no geometry at all.
+function boxes() {
+  const out = [];
+  const walk = (node, path) => {
+    if (node.nodeType !== 1 || node.tagName === 'SCRIPT') return;
+    const r = node.getBoundingClientRect();
+    const cls = typeof node.className === 'string' && node.className.trim()
+      ? '.' + node.className.trim().replace(/\s+/g, '.') : '';
+    out.push([path, node.tagName.toLowerCase() + (node.id ? '#' + node.id : '') + cls,
+      r.x, r.y, r.width, r.height]);
+    let i = 0;
+    for (const child of node.children) walk(child, path + '/' + (i++));
+  };
+  let i = 0;
+  for (const child of (document.getElementById('root') || document.body).children) {
+    walk(child, String(i++));
+  }
+  return out;
+}
+
 async function prep() {
   const toggled = await ensureSetupOpen();
   await nextFrame();
   const { rows, playerRows } = countRows();
   const doc = document.documentElement;
   return {
-    toggled, rows, playerRows,
+    toggled, rows, playerRows, boxes: boxes(),
     theme: doc.getAttribute('data-theme'),
     scrollWidth: doc.scrollWidth,
     scrollHeight: doc.scrollHeight,
@@ -191,6 +214,34 @@ function regions({ width, height, mask }) {
   return found;
 }
 
+// Chrome reports fractional box metrics. Text split across several nodes (htm
+// gives every interpolation its own text node) measures a few HUNDREDTHS of a
+// pixel differently from the same characters in one node, which is invisible
+// but does perturb glyph antialiasing. Anything at or below this is that; a
+// real move is whole pixels.
+const LAYOUT_TOLERANCE = 0.5;
+
+/** Element boxes that moved, resized, appeared or vanished. */
+function compareBoxes(a, b) {
+  const key = (r) => `${r[0]} ${r[1]}`;
+  const mapB = new Map(b.map((r) => [key(r), r]));
+  const seen = new Set();
+  const moved = [];
+  const onlyA = [];
+  for (const r of a) {
+    const k = key(r);
+    seen.add(k);
+    const m = mapB.get(k);
+    if (!m) { onlyA.push(k); continue; }
+    const d = [m[2] - r[2], m[3] - r[3], m[4] - r[4], m[5] - r[5]];
+    const worst = Math.max(...d.map(Math.abs));
+    if (worst > LAYOUT_TOLERANCE) moved.push({ key: k, worst, d, from: r.slice(2), to: m.slice(2) });
+  }
+  const onlyB = b.map(key).filter((k) => !seen.has(k));
+  moved.sort((p, q) => q.worst - p.worst);
+  return { moved, onlyA, onlyB };
+}
+
 const fmtRegion = (r) => `${r.pixels.toLocaleString()} px at x=${r.x} y=${r.y} ${r.width}x${r.height}`;
 
 function reportRegions(list, indent = '         ') {
@@ -298,22 +349,43 @@ function vacuityProblems(label, sc, shotResult) {
 // A harness that reports 0% everywhere without being proven sensitive is
 // worthless. Re-serve the head tree with one small CSS override injected and
 // confirm the comparison notices. Runs by default; --no-self-test skips it.
-const PERTURBATION = '\n/* screenshot-diff self-test */\n.setup-card h3 { color: #ff0000 !important; }\n';
+// Two perturbations, because the harness makes two claims. The colour change
+// must be caught and classified PAINT (nothing moves); the padding change must
+// be caught and classified LAYOUT (boxes move). One proves sensitivity, the
+// pair proves the classification means something.
+const PERTURBATIONS = [
+  { label: '.setup-card h3 { color: #ff0000 }', expect: 'paint',
+    css: '.setup-card h3 { color: #ff0000 !important; }' },
+  // margin, not padding: padding moves the text inside a block heading without
+  // moving the heading's own border box, and it is the box comparison that is
+  // under test here.
+  { label: '.setup-card h3 { margin-left: 7px }', expect: 'layout',
+    css: '.setup-card h3 { margin-left: 7px !important; }' },
+];
 
-async function selfTest(host, oldOrigin) {
+async function selfTest(host) {
   const sc = SCENARIOS.find((s) => s.name === 'rankings, team selected, need mode');
-  const srv = await serve(ROOT, (rel, buf) => (
-    rel === '/css/styles.css' ? Buffer.concat([buf, Buffer.from(PERTURBATION)]) : buf));
+  const cleanSrv = await serve(ROOT);
   const page = await openPage(host);
+  const results = [];
   try {
-    const clean = await shoot(page, oldOrigin, sc.state, 'dark');
-    const dirty = await shoot(page, srv.origin, sc.state, 'dark');
-    const cmp = comparePixels(clean.img, dirty.img);
-    const regionList = cmp.differing ? regions(cmp) : [];
-    return { cmp, regionList, pct: (cmp.differing / cmp.total) * 100 };
+    const clean = await shoot(page, cleanSrv.origin, sc.state, 'dark');
+    for (const p of PERTURBATIONS) {
+      const srv = await serve(ROOT, (rel, buf) => (rel === '/css/styles.css'
+        ? Buffer.concat([buf, Buffer.from(`\n/* screenshot-diff self-test */\n${p.css}\n`)]) : buf));
+      try {
+        const dirty = await shoot(page, srv.origin, sc.state, 'dark');
+        const cmp = comparePixels(clean.img, dirty.img);
+        const geom = compareBoxes(clean.info.boxes, dirty.info.boxes);
+        const got = geom.moved.length ? 'layout' : cmp.differing ? 'paint' : 'nothing';
+        results.push({ ...p, cmp, geom, got, pct: (cmp.differing / cmp.total) * 100,
+          regionList: cmp.differing ? regions(cmp) : [], ok: got === p.expect });
+      } finally { srv.server.close(); }
+    }
+    return results;
   } finally {
     page.close();
-    srv.server.close();
+    cleanSrv.server.close();
   }
 }
 
@@ -330,9 +402,16 @@ async function main() {
   rmSync(OUT_DIR, { recursive: true, force: true });
   mkdirSync(OUT_DIR, { recursive: true });
 
-  // A run killed by a signal never reaches the finally, so clear any stale
-  // registration whose directory is already gone.
+  // A run killed by a signal (SIGPIPE from `| head`, Ctrl-C) never reaches the
+  // finally. Prune clears registrations whose directory is gone; anything still
+  // on disk under our own tmp prefix is ours to remove.
   execSync('git worktree prune', { cwd: ROOT, stdio: VERBOSE ? 'inherit' : 'pipe' });
+  for (const line of execSync('git worktree list --porcelain', { cwd: ROOT }).toString().split('\n')) {
+    const m = line.match(/^worktree (.*ffdash-shot-\w+)$/);
+    if (m && m[1] !== wt) {
+      execSync(`git worktree remove --force ${m[1]}`, { cwd: ROOT, stdio: VERBOSE ? 'inherit' : 'pipe' });
+    }
+  }
   execSync(`git worktree add --detach ${wt} ${OLD_REF}`, { cwd: ROOT, stdio: VERBOSE ? 'inherit' : 'pipe' });
   try {
     const oldSrv = await serve(wt);
@@ -374,15 +453,25 @@ async function main() {
         // expected -- but a 0% or 100% difference would mean the harness, not
         // the app, is broken.
         const expected = !!sc.reordersRows;
+        const geom = compareBoxes(before.info.boxes, after.info.boxes);
+        const layoutBroken = !expected
+          && (geom.moved.length > 0 || geom.onlyA.length > 0 || geom.onlyB.length > 0);
+
         let verdict;
         if (problems.length) verdict = 'FAIL';
         else if (expected) {
           if (cmp.differing === 0) { problems.push('expected the approved need-mode row reorder to show up, saw 0 differing pixels'); verdict = 'FAIL'; }
           else if (pct > 60) { problems.push(`the approved reorder should be localized, but ${pct.toFixed(2)}% of the page differs`); verdict = 'FAIL'; }
           else verdict = 'ACCEPTED';
-        } else verdict = cmp.differing === 0 ? 'PASS' : 'FAIL';
+        } else if (cmp.differing === 0) verdict = 'PASS';
+        // Split the two kinds of failure. LAYOUT means an element's box
+        // actually moved or resized -- something is in a different place.
+        // PAINT means every box is where it was and only the pixels inside
+        // them changed: a color/border/font change, or the harmless subpixel
+        // antialiasing that follows from htm splitting text into more nodes.
+        else verdict = layoutBroken ? 'LAYOUT' : 'PAINT';
 
-        if (verdict === 'FAIL') failures++;
+        if (verdict !== 'PASS' && verdict !== 'ACCEPTED') failures++;
 
         const name = `${slug(sc.name)}.${theme}`;
         const wrote = (cmp.differing > 0 || KEEP_PASSING)
@@ -395,6 +484,18 @@ async function main() {
           `  rows ${before.info.rows}/${after.info.rows}` +
           `  page height ${before.img.height}/${after.img.height}`);
         reportRegions(regionList);
+        console.log(`         element boxes: ${before.info.boxes.length}/${after.info.boxes.length},` +
+          ` ${geom.moved.length} moved or resized by more than ${LAYOUT_TOLERANCE}px` +
+          (geom.onlyA.length || geom.onlyB.length
+            ? `, ${geom.onlyA.length} only in vanilla, ${geom.onlyB.length} only in preact` : ''));
+        for (const m of geom.moved.slice(0, VERBOSE ? 20 : 6)) {
+          const [dx, dy, dw, dh] = m.d.map((v) => v.toFixed(2));
+          console.log(`           moved ${m.key}  dx=${dx} dy=${dy} dw=${dw} dh=${dh}` +
+            `  (vanilla x=${m.from[0].toFixed(2)} y=${m.from[1].toFixed(2)})`);
+        }
+        if (geom.moved.length > (VERBOSE ? 20 : 6)) {
+          console.log(`           ...and ${geom.moved.length - (VERBOSE ? 20 : 6)} more`);
+        }
         for (const p of problems) console.log(`         PROBLEM: ${p}`);
         if (wrote.length) console.log(`         wrote ${wrote.join(', ')}`);
 
@@ -418,14 +519,16 @@ async function main() {
 
     if (SELF_TEST) {
       console.log('---------------- sensitivity self-test ----------------');
-      const st = await selfTest(chrome.host, oldSrv.origin);
-      const ok = st.cmp.differing > 0;
-      if (!ok) failures++;
-      console.log(`${ok ? 'PASS' : 'FAIL'}     injected CSS override (.setup-card h3 { color:#ff0000 })`);
-      console.log(`         differing ${st.cmp.differing.toLocaleString()} of ` +
-        `${st.cmp.total.toLocaleString()} px (${st.pct.toFixed(4)}%)`);
-      reportRegions(st.regionList);
-      if (!ok) console.log('         PROBLEM: the harness did not notice a deliberate visual change');
+      console.log('(head tree against itself, one injected CSS override at a time)');
+      for (const st of await selfTest(chrome.host)) {
+        if (!st.ok) failures++;
+        console.log(`${st.ok ? 'PASS' : 'FAIL'}     ${st.label}  ->  expected ${st.expect}, saw ${st.got}`);
+        console.log(`         differing ${st.cmp.differing.toLocaleString()} of ` +
+          `${st.cmp.total.toLocaleString()} px (${st.pct.toFixed(4)}%),` +
+          ` ${st.geom.moved.length} element box(es) moved`);
+        reportRegions(st.regionList);
+        if (!st.ok) console.log('         PROBLEM: the harness did not classify a deliberate change correctly');
+      }
       console.log('');
     }
 
