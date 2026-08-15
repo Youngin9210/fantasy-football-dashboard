@@ -6,19 +6,15 @@ import { PlayersTable } from './PlayersTable.js';
 import { RosterPanel } from './RosterPanel.js';
 import { DraftLog } from './DraftLog.js';
 import { SetupPanel } from './SetupPanel.js';
+import { useSleeperSync } from './useSleeperSync.js';
 
 export function App({ toggleTheme }) {
   const { players, teams, settings, pickCounter } = useStore();
   // Setup opens by itself only on a truly empty install, matching the old init().
   const [setupOpen, setSetupOpen] = useState(() => players.length === 0 && teams.length === 0);
-  const [syncStatus] = useState({ ok: true, error: null });
-  // TRANSITIONAL SCAFFOLDING (Task 4 → Task 5): the Sleeper polling hook does
-  // not exist yet, so connect/disconnect have nothing to start or stop. Task 5
-  // replaces both of these with useSleeperSync()'s real start/stop — which is
-  // also where `updateSettings({ sleeperSyncEnabled: false })` on disconnect
-  // lives, so until then Disconnect only reports itself in the panel.
-  const startPolling = () => {};
-  const stopPolling = () => {};
+  // Owns the Sleeper poller: resumes it on load when settings say sync is on,
+  // stops it on unmount, and feeds the top bar's sync dot.
+  const { status: syncStatus, start: startPolling, stop: stopPolling } = useSleeperSync();
 
   const [filter, setFilter] = useState('ALL');
   const [search, setSearch] = useState('');
