@@ -147,8 +147,14 @@ self-contained). There is still no build step and no runtime dependency on any
 external host — the file is committed, not fetched from a CDN. Markup uses htm
 tagged templates rather than JSX, since JSX would require a compiler.
 
-To verify a UI change against the previous implementation:
+To check a UI change for unintended visual drift:
 
 ```
-node tools/dom-diff.mjs
+node tools/screenshot-diff.mjs
 ```
+
+It screenshots this build and a `git worktree` of an earlier commit at a fixed
+viewport in both themes and diffs them pixel by pixel, reporting which element
+boxes moved. A DOM-structure harness (`tools/dom-diff.mjs`) existed alongside it
+during the Preact rewrite and was retired once that port was verified — it
+compared against a baseline that no longer exists on `main`.

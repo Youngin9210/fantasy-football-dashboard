@@ -1,8 +1,8 @@
-// Shared plumbing for the two verification harnesses (tools/dom-diff.mjs and
-// tools/screenshot-diff.mjs).
+// Shared plumbing for the verification harnesses — currently just
+// tools/screenshot-diff.mjs, after tools/dom-diff.mjs was retired.
 //
-// Everything here was extracted verbatim from dom-diff.mjs so both tools drive
-// the same browser, the same static server, and the same seeded scenarios.
+// Extracted verbatim from the original dom-diff.mjs, so any harness built on it
+// drives the same browser, the same static server, and the same seeded scenarios.
 // No dependencies: a hand-rolled static file server, and CDP driven over
 // Node's built-in global WebSocket against chrome-headless-shell.
 import { spawn } from 'node:child_process';

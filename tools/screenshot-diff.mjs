@@ -1,6 +1,7 @@
 // Pixel-level proof that the Preact rewrite LOOKS the same as the vanilla build.
 //
-// tools/dom-diff.mjs already proves structure, attributes and text match. It
+// A companion DOM-structure harness (tools/dom-diff.mjs, since retired) proved
+// structure, attributes and text matched during the Preact port. It
 // deliberately normalizes whitespace between inline elements, so a spacing or
 // color regression that never touches the DOM would slip past it. This tool
 // closes that gap: it serves this working tree and a git worktree of the
@@ -9,7 +10,7 @@
 // screenshots in BOTH themes, and diffs them pixel by pixel.
 //
 // No dependencies. The static server, chrome-headless-shell launch, CDP client
-// and seeded scenarios are shared with dom-diff.mjs via tools/harness.mjs; PNG
+// and seeded scenarios live in tools/harness.mjs; PNG
 // decoding/encoding is hand-rolled on Node's built-in zlib in tools/png.mjs.
 // The comparison is done in Node, not in the page.
 //
@@ -55,7 +56,7 @@ const PREP_SOURCE = ENSURE_SETUP_OPEN_SOURCE + String.raw`
 // Every element's border box, keyed by its position in the tree plus a short
 // identity. A pixel count says how much changed; this says WHAT moved, which
 // is the difference between "a button shifted 4px" and "the same glyphs landed
-// on slightly different subpixels". dom-diff.mjs compares no geometry at all.
+// on slightly different subpixels". A DOM-structure diff compares no geometry.
 function boxes() {
   const out = [];
   const walk = (node, path) => {
