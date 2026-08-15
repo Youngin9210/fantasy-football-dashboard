@@ -10,7 +10,8 @@ globalThis.localStorage = {
 };
 
 const St = await import('../js/state.js');
-const { applyPicks, suppressPick, clearSuppressed } = await import('../js/ui/useSleeperSync.js');
+const { applyPicks, suppressPick, clearSuppressed, beginPolling } =
+  await import('../js/ui/useSleeperSync.js');
 
 function sleeperPick(pickNo, rosterId, first, last, pos, team) {
   return {
@@ -161,6 +162,46 @@ test('Reset Draft clears suppression: a previously-undone pick re-imports afterw
   const s = St.getState();
   assert.deepEqual(s.picks.map((p) => p.pickNo), [1, 2], 'both picks re-import after a reset');
   assert.equal(s.players.find((p) => p.id === 'p2').drafted, true);
+});
+
+// THE FINDING-2 REGRESSION. Suppression is keyed by bare pick number with no
+// draft ID, so without this it leaks across drafts: he will very likely dry-run
+// against a mock draft to prove sync works, and any ✕ during that dry run
+// silently drops the same pick numbers from the real draft an hour later.
+test('starting a different draft clears suppression carried over from the last one', () => {
+  seedBoard();
+  beginPolling('draft-A');
+  applyPicks(LIVE_PICKS);
+
+  // The dry run: ✕ a pick (PlayersTable's per-row ✕ suppresses, then undrafts).
+  suppressPick(1);
+  St.undraftPlayer('p1');
+  assert.deepEqual(St.getState().picks.map((p) => p.pickNo), [2], 'precondition: the ✕ landed');
+
+  // Now connect to the real draft. connectSleeper stores the new draft ID and
+  // calls start(), which calls beginPolling with it.
+  beginPolling('draft-B');
+  applyPicks(LIVE_PICKS);
+
+  assert.equal(St.getState().players.find((p) => p.id === 'p1').drafted, true,
+    "the new draft's pick 1 must import, not inherit the old draft's suppression");
+});
+
+// The other side of that choice: reconnecting to the SAME draft (a refresh, a
+// network hiccup, a re-press of Connect) must keep the corrections already
+// made, or every mis-matched pick the user fixed comes straight back.
+test('restarting the same draft keeps suppression', () => {
+  seedBoard();
+  beginPolling('draft-A');
+  applyPicks(LIVE_PICKS);
+  suppressPick(2);
+  St.undoLastPick();
+
+  beginPolling('draft-A');
+  applyPicks(LIVE_PICKS);
+
+  assert.deepEqual(St.getState().picks.map((p) => p.pickNo), [1], 'the undone pick stays undone');
+  clearSuppressed();
 });
 
 test('Reset Everything mid-sync: the next poll rebuilds the board as manual players', () => {

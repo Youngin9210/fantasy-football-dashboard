@@ -35,8 +35,28 @@ import * as Sleeper from '../sleeper.js';
 // exactly that reason.
 let imported = new Set();
 
+// The draft ID the last polling session was started against, so that switching
+// drafts can drop suppression that only ever made sense for the old one.
+let lastDraftId = null;
+
 // Called by start() once per polling session, before the first tick.
-export function beginPolling() {
+//
+// Suppression is keyed by bare pick number with no draft ID, so it MUST be
+// dropped when the draft changes or it leaks: ✕ a pick in a mock draft while
+// dry-running sync, connect to the real draft, and that pick number is silently
+// skipped there too — the failure mode is a player missing from the board with
+// nothing to explain it. Clearing here rather than in SetupPanel.connectSleeper
+// covers every path that starts polling a different draft (the connect button,
+// the resume-on-load effect, any future caller) instead of just the one button,
+// and — unlike an unconditional clear on connect — it keeps corrections made
+// against the CURRENT draft when polling restarts for it: a refresh or a
+// re-press of Connect mid-draft must not resurrect every mis-matched pick the
+// user already fixed.
+export function beginPolling(draftId) {
+  if (draftId !== lastDraftId) {
+    clearSuppressed();
+    lastDraftId = draftId;
+  }
   imported = new Set(St.getState().picks.map((p) => p.pickNo));
 }
 
@@ -114,7 +134,7 @@ export function useSleeperSync() {
     if (!mountedRef.current) return;
     const draftId = St.getState().settings.sleeperDraftId;
     if (!draftId) return;
-    beginPolling();
+    beginPolling(draftId);
 
     const gen = genRef.current;
     const alive = () => mountedRef.current && genRef.current === gen;
