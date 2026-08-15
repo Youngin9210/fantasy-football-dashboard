@@ -1,7 +1,6 @@
 import { html } from '../vendor/preact.js';
 import { pickToSlotIndex, pickToRound, nextPickForSlot } from '../draft.js';
 import { useStore } from './useStore.js';
-import { useTheme } from './useTheme.js';
 
 function ClockWidget() {
   const { settings, teams, pickCounter } = useStore();
@@ -38,8 +37,7 @@ function SyncStatus({ status }) {
   </div>`;
 }
 
-export function TopBar({ onToggleSetup, syncStatus }) {
-  const [, toggleTheme] = useTheme();
+export function TopBar({ onToggleSetup, syncStatus, toggleTheme }) {
   return html`<header class="topbar">
     <div class="brand">🏈 Draft Dashboard</div>
     <${ClockWidget} />
