@@ -143,6 +143,10 @@ Exactly three, all previously triaged as ship-able and approved for inclusion:
 3. The `recommendOrder` tie-break test is rewritten to use two players with
    *different* ranks at an equal score, so it actually exercises the tie-break
    direction rather than passing trivially.
+4. The Setup panel auto-opens only on an empty install. The vanilla build opens
+   it on every load — `index.html` never carried the `hidden` class that
+   `app.js:465` tried to remove, so that call was always a no-op. Approved by
+   the owner after the discrepancy surfaced in Task 1's review.
 
 Everything else is markup-for-markup identical.
 
