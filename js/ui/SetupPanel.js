@@ -12,7 +12,7 @@ import { useStore } from './useStore.js';
 // containing angle brackets is interpolated instead of written inline.
 const SLEEPER_URL_HINT = 'sleeper.com/leagues/<LEAGUE_ID>/...';
 
-export function SetupPanel({ onConnected, onDisconnect }) {
+export function SetupPanel({ setupOpen, onConnected, onDisconnect }) {
   const { settings, teams } = useStore();
   const [sleeperMsg, setSleeperMsg] = useState('');
   const [csvMsg, setCsvMsg] = useState('');
@@ -67,7 +67,7 @@ export function SetupPanel({ onConnected, onDisconnect }) {
     St.updateSettings({ numTeams: names.length });
   }
 
-  return html`<section class="setup-panel" id="setupPanel">
+  return html`<section class="setup-panel${setupOpen ? '' : ' hidden'}" id="setupPanel">
     <div class="setup-grid">
       <div class="setup-card">
         <h3>League Settings</h3>

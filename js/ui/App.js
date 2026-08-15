@@ -37,7 +37,7 @@ export function App({ toggleTheme }) {
 
   return html`
     <${TopBar} onToggleSetup=${() => setSetupOpen((v) => !v)} syncStatus=${syncStatus} toggleTheme=${toggleTheme} />
-    ${setupOpen ? html`<${SetupPanel} onConnected=${startPolling} onDisconnect=${stopPolling} />` : null}
+    <${SetupPanel} setupOpen=${setupOpen} onConnected=${startPolling} onDisconnect=${stopPolling} />
     <main class="layout">
       <${PlayersTable} filter=${filter} search=${search}
         onFilter=${setFilter} onSearch=${setSearch}
