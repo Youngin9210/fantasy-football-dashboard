@@ -151,7 +151,7 @@ export function SetupPanel({ setupOpen, onConnected, onDisconnect }) {
             value=${leagueId} onInput=${(e) => setLeagueId(e.target.value)} />
           <div class="hint">Found in your league's Sleeper URL: ${SLEEPER_URL_HINT}</div>
         </div>
-        <button class="btn" id="connectSleeperBtn" onClick=${connectSleeper}>Connect & Sync Teams</button>
+        <button class="btn" id="connectSleeperBtn" onClick=${connectSleeper}>Connect & Sync Teams</button>${' '}
         <button class="btn small" id="disconnectSleeperBtn" onClick=${() => { onDisconnect(); setSleeperMsg('Disconnected. Live sync paused.'); }}>Disconnect</button>
         <div class="hint" id="sleeperConnectMsg">${sleeperMsg}</div>
       </div>
