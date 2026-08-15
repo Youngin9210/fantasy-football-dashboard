@@ -146,10 +146,11 @@ function extract(root) {
     if (node.nodeType !== 1) return;
     if (node.tagName === 'SCRIPT') return;
 
+    const checkable = node.tagName === 'INPUT' && /^(checkbox|radio)$/i.test(node.type);
     const skip = new Set(['style']);
     if (FORM_VALUE.has(node.tagName)) skip.add('value');
-    if (node.tagName === 'OPTION') { skip.add('selected'); }
-    if (node.tagName === 'INPUT') { skip.add('checked'); }
+    if (node.tagName === 'OPTION') skip.add('selected');
+    if (checkable) skip.add('checked');
 
     const attrs = [...node.attributes]
       .filter((a) => !skip.has(a.name))
@@ -159,7 +160,7 @@ function extract(root) {
     if (sig !== null) attrs.push('style=' + JSON.stringify(sig));
     if (FORM_VALUE.has(node.tagName)) attrs.push('value=' + JSON.stringify(node.value));
     if (node.tagName === 'OPTION') attrs.push('selected=' + node.selected);
-    if (node.tagName === 'INPUT') attrs.push('checked=' + node.checked);
+    if (checkable) attrs.push('checked=' + node.checked);
 
     attrs.sort();
     out.push('  '.repeat(depth) + '<' + node.tagName.toLowerCase() +
@@ -498,6 +499,9 @@ async function main() {
       for (const [label, cap] of [['vanilla', before], ['preact', after]]) {
         if (cap.errors.length) problems.push(`${label} threw: ${cap.errors.join(' | ')}`);
         if (cap.keyed) problems.push(`${label} rendered ${cap.keyed} element(s) with a literal key attribute`);
+        // Two blank pages diff clean. The chrome alone is well over 100 lines.
+        const lines = cap.dom.split('\n').length;
+        if (lines < 100) problems.push(`${label} extraction is only ${lines} lines -- did the page render?`);
       }
       // A harness that diffs two empty tables and reports success is worse
       // than no harness.
@@ -520,6 +524,7 @@ async function main() {
       console.log(`\n${ok ? 'PASS' : 'FAIL'}  ${sc.name}`);
       console.log(`      rows: vanilla=${before.rows} preact=${after.rows}` +
         ` (player rows ${before.playerRows}/${after.playerRows})` +
+        `  lines: ${before.dom.split('\n').length}/${after.dom.split('\n').length}` +
         `  setup toggled: vanilla=${before.toggled} preact=${after.toggled}`);
       for (const m of moves) {
         console.log(`      accepted move (approved need-mode row order): ` +
