@@ -131,3 +131,14 @@ itself still has no build step and no runtime dependencies.
 
 `node tools/calibrate.js` prints the same board scored at three different
 need-weights, for tuning `STARTER_BONUS`.
+
+The UI is built with Preact + htm, vendored at `js/vendor/preact.js` (13KB,
+self-contained). There is still no build step and no runtime dependency on any
+external host — the file is committed, not fetched from a CDN. Markup uses htm
+tagged templates rather than JSX, since JSX would require a compiler.
+
+To verify a UI change against the previous implementation:
+
+```
+node tools/dom-diff.mjs
+```
