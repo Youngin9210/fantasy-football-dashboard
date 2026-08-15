@@ -57,6 +57,16 @@ running.
 You can still use the manual **Draft** button at any time (e.g. for
 corrections, or if you'd rather not connect Sleeper at all).
 
+**Correcting a bad name match while sync is running.** Click the ✕ on the
+wrongly-matched row, then **Draft** the player who really went there. The ✕
+tells the poller to leave that *player* alone for the rest of the session, so
+the next poll six seconds later won't put him straight back — and because it
+is keyed to the player rather than to the pick number, it never suppresses
+somebody else's pick. Both **Reset Draft** and **Reset Everything** clear
+those corrections, as does reloading the page (the manual pick you made
+survives the reload; the ✕ does not, so a mis-matched player can reappear
+after a refresh — ✕ him again if so).
+
 If your network blocks requests to `api.sleeper.app` (rare, but some
 locked-down corporate/school networks do), sync will fail gracefully and
 you can just use the dashboard manually.
