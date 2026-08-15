@@ -53,6 +53,21 @@ export function SetupPanel({ setupOpen, onConnected, onDisconnect }) {
     const { players, warnings } = parseRankingsCsv(text);
     if (players.length === 0) return setCsvMsg(warnings.join(' ') || 'No players found in CSV.');
     St.setPlayers(players.map((p) => Object.assign({}, p, { id: St.nextId('p') })));
+    // setPlayers swaps the whole board for freshly-created player objects, none
+    // of them drafted — but it leaves `picks` and `pickCounter` alone. With live
+    // sync running that is corrupting: the draft log still lists every pick, yet
+    // the players those picks took are available again, and recommend.js will
+    // happily recommend someone who is already off the board. Polling cannot
+    // repair it either, because those pick_nos are still in `picks` and so are
+    // skipped as already-processed on every later tick. resetDraft clears picks
+    // while keeping the rankings just imported and the teams, so the very next
+    // poll refills the board against the new player list. Sync off = no repair
+    // mechanism, so leave the manual draft alone and let the user reset if they
+    // want to.
+    //
+    // Read from the store rather than the destructured `settings`: updateSettings
+    // replaces the settings object, so a render-time copy can be one tick stale.
+    if (St.getState().settings.sleeperSyncEnabled) St.resetDraft();
     setCsvMsg(warnings.length
       ? `Imported ${players.length} players. ${warnings.join(' ')}`
       : `Imported ${players.length} players.`);

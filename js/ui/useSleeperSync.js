@@ -11,7 +11,11 @@ import * as Sleeper from '../sleeper.js';
 // one of those call sites and the failure is silent — Reset Draft mid-draft
 // would leave the set full, so every subsequent poll skips every pick and the
 // board just stays empty with no error. Deriving the set from `state.picks`
-// each tick makes those resets self-healing: clearing `picks` clears the set.
+// each tick makes Reset Draft and Reset Everything self-healing: clearing
+// `picks` clears the set. Vanilla's third site, CSV import, is NOT self-healing
+// — `setPlayers` deliberately leaves `picks` and `pickCounter` untouched — so
+// that one is handled explicitly at its call site in SetupPanel.importCsv,
+// which calls `St.resetDraft()` when sync is enabled.
 //
 // Exported so the reset-mid-sync behaviour can be tested without a browser.
 export function applyPicks(picks) {
