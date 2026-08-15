@@ -1,7 +1,18 @@
 # Draft Queue (Wish List) — Design
 
 Date: 2026-08-15
-Status: Approved, ready for implementation planning
+Status: **SUPERSEDED — not implemented, and should not be.**
+
+> Dropped 2026-08-15, before any code was written. An audit of what Sleeper
+> already provides natively found this feature duplicates its built-in draft
+> queue, which does the same job and additionally auto-drafts from it when you
+> are away — something a read-only API client cannot do. Of everything in this
+> project, the queue was the most redundant.
+>
+> Kept for the record because two decisions below still hold if a queue is ever
+> worth building for a platform that lacks one: identity by normalized name (so
+> it survives a CSV re-import), and annotating the queue with need rather than
+> folding a queue bonus into the score.
 
 ## Problem
 
