@@ -17,13 +17,39 @@ import * as Sleeper from '../sleeper.js';
 // that one is handled explicitly at its call site in SetupPanel.importCsv,
 // which calls `St.resetDraft()` when sync is enabled.
 //
+// Pick numbers the user has explicitly undone, for the life of the page. The
+// store-derived set alone cannot cover these: an undo REMOVES the pick from
+// `state.picks`, so six seconds later the poller sees its pick_no as brand new
+// and re-imports it — the undo silently reverts itself. That matters because
+// `matchPickToPlayer` matches names with a loose bidirectional `includes` and
+// does mis-match sometimes; undoing the wrong player is the natural correction,
+// and without this it is impossible during a live sync short of disconnecting.
+//
+// Resulting behaviour: an explicitly undone pick stays undone for the session,
+// even though Sleeper keeps reporting it. The escape hatch is a reset — both
+// Reset Draft and Reset Everything clear this set at their call sites in
+// SetupPanel (as does a CSV import while sync is on, which resets the draft),
+// so nothing can get stuck suppressed the way vanilla's never-cleared
+// `processedPickNos` got stuck populated.
+const suppressed = new Set();
+
+// Called by the UI right before it drops a pick from the store: DraftLog's
+// "Undo Last Pick" and PlayersTable's per-row ✕.
+export function suppressPick(pickNo) {
+  if (pickNo != null) suppressed.add(pickNo);
+}
+
+export function clearSuppressed() {
+  suppressed.clear();
+}
+
 // Exported so the reset-mid-sync behaviour can be tested without a browser.
 export function applyPicks(picks) {
   const processed = new Set(St.getState().picks.map((p) => p.pickNo));
   // Ascending pick order so draft-log order and pickCounter track the real draft.
   for (const pick of picks.slice().sort((a, b) => a.pick_no - b.pick_no)) {
     if (!pick.player_id) continue; // slot not yet picked
-    if (processed.has(pick.pick_no)) continue;
+    if (processed.has(pick.pick_no) || suppressed.has(pick.pick_no)) continue;
     processed.add(pick.pick_no); // guards against a duplicate pick_no in one payload
 
     const team = St.getState().teams.find((t) => t.rosterId === pick.roster_id) || null;

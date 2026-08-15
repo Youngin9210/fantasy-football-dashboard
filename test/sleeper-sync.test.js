@@ -10,7 +10,7 @@ globalThis.localStorage = {
 };
 
 const St = await import('../js/state.js');
-const { applyPicks } = await import('../js/ui/useSleeperSync.js');
+const { applyPicks, suppressPick, clearSuppressed } = await import('../js/ui/useSleeperSync.js');
 
 function sleeperPick(pickNo, rosterId, first, last, pos, team) {
   return {
@@ -23,6 +23,7 @@ function sleeperPick(pickNo, rosterId, first, last, pos, team) {
 
 function seedBoard() {
   St.resetAll();
+  clearSuppressed(); // module-level and session-lived, so it outlives a test
   St.setTeams([
     { id: 'r1', name: 'Alpha', slot: 0, rosterId: 1, userId: null, isMe: false },
     { id: 'r2', name: 'Bravo', slot: 1, rosterId: 2, userId: null, isMe: false },
@@ -81,6 +82,50 @@ test('Reset Draft mid-sync: the next poll re-imports the picks', () => {
   assert.deepEqual(s.picks.map((p) => p.pickNo), [1, 2]);
   assert.equal(s.players.length, 2, 're-imported onto the same players, not manual clones');
   assert.equal(s.players.find((p) => p.id === 'p1').drafted, true);
+});
+
+// THE OTHER HALF OF THE SAME TRADE-OFF. Deriving the processed set from the
+// store means an undo — the only way to correct a bad `matchPickToPlayer` name
+// match while sync runs — is undone again by the next tick six seconds later.
+// The suppression set is what makes an undo stick without reintroducing
+// vanilla's never-cleared accumulator.
+test('an explicitly undone pick is not re-imported on the next tick', () => {
+  seedBoard();
+  applyPicks(LIVE_PICKS);
+
+  // Exactly what DraftLog's "Undo Last Pick" (and PlayersTable's ✕) now do:
+  // record the pick number, then drop the pick from the store.
+  suppressPick(2);
+  St.undoLastPick();
+  assert.deepEqual(St.getState().picks.map((p) => p.pickNo), [1], 'precondition: the undo landed');
+
+  applyPicks(LIVE_PICKS); // the next 6-second tick
+
+  const s = St.getState();
+  assert.deepEqual(s.picks.map((p) => p.pickNo), [1], 'the undone pick stays undone');
+  assert.equal(s.players.find((p) => p.id === 'p2').drafted, false, 'and its player stays available');
+  assert.equal(s.players.length, 2, 'no manual clone invented for the suppressed pick');
+  clearSuppressed();
+});
+
+test('Reset Draft clears suppression: a previously-undone pick re-imports afterwards', () => {
+  seedBoard();
+  applyPicks(LIVE_PICKS);
+  suppressPick(2);
+  St.undoLastPick();
+
+  // The Reset Draft button in SetupPanel clears the suppression set alongside
+  // St.resetDraft(); without that, pick 2 would be suppressed for the rest of
+  // the session and never come back — the same silent-skip class of bug as an
+  // uncleared processedPickNos.
+  clearSuppressed();
+  St.resetDraft();
+
+  applyPicks(LIVE_PICKS);
+
+  const s = St.getState();
+  assert.deepEqual(s.picks.map((p) => p.pickNo), [1, 2], 'both picks re-import after a reset');
+  assert.equal(s.players.find((p) => p.id === 'p2').drafted, true);
 });
 
 test('Reset Everything mid-sync: the next poll rebuilds the board as manual players', () => {

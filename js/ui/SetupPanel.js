@@ -5,6 +5,7 @@ import * as Sleeper from '../sleeper.js';
 import { normalizePos } from '../positions.js';
 import { parseLimitsInput, formatLimits } from '../limits.js';
 import { useStore } from './useStore.js';
+import { clearSuppressed } from './useSleeperSync.js';
 
 // htm is a template parser, not an HTML parser: it does NO entity decoding, so
 // an inline `&amp;` renders as the literal characters "&amp;". Plain `&` is
@@ -67,7 +68,10 @@ export function SetupPanel({ setupOpen, onConnected, onDisconnect }) {
     //
     // Read from the store rather than the destructured `settings`: updateSettings
     // replaces the settings object, so a render-time copy can be one tick stale.
-    if (St.getState().settings.sleeperSyncEnabled) St.resetDraft();
+    if (St.getState().settings.sleeperSyncEnabled) {
+      clearSuppressed();
+      St.resetDraft();
+    }
     setCsvMsg(warnings.length
       ? `Imported ${players.length} players. ${warnings.join(' ')}`
       : `Imported ${players.length} players.`);
@@ -169,12 +173,19 @@ export function SetupPanel({ setupOpen, onConnected, onDisconnect }) {
       <div class="setup-card">
         <h3>Danger Zone</h3>
         <button class="btn danger" id="resetDraftBtn" onClick=${() => {
-          if (confirm('Reset the draft? This clears drafted status and pick history but keeps your rankings and teams.')) St.resetDraft();
+          // clearSuppressed before every reset: an undone pick must not stay
+          // suppressed across a reset, or it would never re-import and the board
+          // would come back one pick short with nothing to explain it.
+          if (confirm('Reset the draft? This clears drafted status and pick history but keeps your rankings and teams.')) {
+            clearSuppressed();
+            St.resetDraft();
+          }
         }}>Reset Draft (keep rankings & teams)</button>
         <br /><br />
         <button class="btn danger" id="resetAllBtn" onClick=${() => {
           if (confirm('Reset EVERYTHING (teams, rankings, draft progress, Sleeper connection)? This cannot be undone.')) {
             onDisconnect();
+            clearSuppressed();
             St.resetAll();
           }
         }}>Reset Everything</button>

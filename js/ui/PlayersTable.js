@@ -3,6 +3,7 @@ import * as St from '../state.js';
 import { rosterState, recommendOrder } from '../recommend.js';
 import { FLEX_ELIGIBLE } from '../positions.js';
 import { useStore } from './useStore.js';
+import { suppressPick } from './useSleeperSync.js';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K'];
 
@@ -51,7 +52,13 @@ function PlayerRow({ entry, teams, draftForId, tierStart }) {
     <td>${reason ? html`<span class="why-badge ${whyClass(reason)}">${reason}</span>` : null}</td>
     <td class="drafted-by">${p.drafted ? `#${p.pickNo} · ${teamName}` : ''}</td>
     <td>${p.drafted
-      ? html`<button class="btn small danger" onClick=${() => St.undraftPlayer(p.id)}>✕</button>`
+      ? html`<button class="btn small danger" onClick=${() => {
+          // ✕ undrafts a player, but suppression is keyed by pick number — take
+          // it off the player before undrafting clears it, or a live Sleeper
+          // sync re-imports this pick on its next tick.
+          suppressPick(p.pickNo);
+          St.undraftPlayer(p.id);
+        }}>✕</button>`
       : html`<button class="btn small primary" onClick=${() => St.draftPlayer(p.id, draftForId || null)}>Draft</button>`}</td>
   </tr>`;
 }
