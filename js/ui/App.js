@@ -3,6 +3,8 @@ import { pickToSlotIndex } from '../draft.js';
 import { useStore } from './useStore.js';
 import { TopBar } from './TopBar.js';
 import { PlayersTable } from './PlayersTable.js';
+import { RosterPanel } from './RosterPanel.js';
+import { DraftLog } from './DraftLog.js';
 
 export function App({ toggleTheme }) {
   const { players, teams, settings, pickCounter } = useStore();
@@ -32,7 +34,11 @@ export function App({ toggleTheme }) {
       <${PlayersTable} filter=${filter} search=${search}
         onFilter=${setFilter} onSearch=${setSearch}
         draftForId=${draftForId} onDraftFor=${(id) => setDraftForOverride({ pick: pickCounter, id })} />
-      <aside class="sidebar"></aside>
+      <aside class="sidebar">
+        <${RosterPanel} />
+        <${DraftLog} />
+      </aside>
     </main>
+    <div class="footer-note">Draft data stays in your browser (localStorage). Nothing is sent anywhere except live pick polling to the public Sleeper API, if connected.</div>
   `;
 }
