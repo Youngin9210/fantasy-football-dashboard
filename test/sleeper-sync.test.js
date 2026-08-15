@@ -40,6 +40,41 @@ const LIVE_PICKS = [
   sleeperPick(2, 2, 'Star', 'WR', 'WR', 'MIN'),
 ];
 
+// THE FINDING-1 REGRESSION. A manual pick shares state.js's pick numbering
+// space with Sleeper's (`draftPlayer` with no override uses ++pickCounter), so
+// deriving "already imported" from ALL store picks makes a manual pick at
+// number N mask Sleeper's real pick N forever: the player who actually went
+// there stays on the board as available and the recommender happily suggests
+// him. The documented fix for a bad `matchPickToPlayer` name match — ✕ the
+// wrong player, manually draft the right one — is exactly what triggers it.
+test('a manual pick does not mask the Sleeper pick with the same number', () => {
+  seedBoard();
+  St.addPlayers([
+    { id: 'p3', rank: 3, name: 'Star TE', team: 'KC', pos: 'TE', bye: null, adp: null, source: 'csv', drafted: false, draftedByTeamId: null, pickNo: null },
+    { id: 'p4', rank: 4, name: 'Star QB', team: 'BUF', pos: 'QB', bye: null, adp: null, source: 'csv', drafted: false, draftedByTeamId: null, pickNo: null },
+    { id: 'p5', rank: 5, name: 'Real WR', team: 'DET', pos: 'WR', bye: null, adp: null, source: 'csv', drafted: false, draftedByTeamId: null, pickNo: null },
+  ]);
+
+  const firstThree = LIVE_PICKS.concat([sleeperPick(3, 1, 'Star', 'TE', 'TE', 'KC')]);
+  applyPicks(firstThree);
+  assert.equal(St.getState().pickCounter, 3, 'precondition: three picks imported');
+
+  // The correction workflow: pick 2 matched the wrong player, so ✕ him and
+  // manually draft the player who really went there.
+  suppressPick(2);
+  St.undraftPlayer('p2');
+  St.draftPlayer('p5', 'r2'); // no pickNo override -> takes pickCounter, i.e. 4
+
+  // The very next 6-second tick, now carrying Sleeper's real pick 4.
+  applyPicks(firstThree.concat([sleeperPick(4, 2, 'Star', 'QB', 'QB', 'BUF')]));
+
+  const s = St.getState();
+  assert.equal(s.players.find((p) => p.id === 'p4').drafted, true,
+    "Sleeper's pick 4 must import even though a manual pick already took number 4");
+  assert.equal(s.players.length, 5, 'imported onto the ranked player, not a manual clone');
+  clearSuppressed();
+});
+
 test('applyPicks imports Sleeper picks onto the matching players and teams', () => {
   seedBoard();
   applyPicks(LIVE_PICKS);

@@ -2,20 +2,44 @@ import { useState, useRef, useEffect, useCallback } from '../vendor/preact.js';
 import * as St from '../state.js';
 import * as Sleeper from '../sleeper.js';
 
-// Imports one poll's worth of Sleeper picks into the store.
+// Pick numbers THIS PAGE has imported from Sleeper. Membership alone does not
+// skip a pick: a number is only treated as already-imported when it is in this
+// set AND still present in `state.picks` (see applyPicks). That intersection is
+// deliberate and load bearing, in both directions.
 //
-// The set of already-imported pick numbers is rebuilt FROM THE STORE on every
-// call rather than accumulated across calls. That is deliberate and load
-// bearing: vanilla kept a long-lived `processedPickNos` set and had to clear it
-// by hand in three places (CSV import, Reset Draft, Reset Everything). Miss any
-// one of those call sites and the failure is silent — Reset Draft mid-draft
-// would leave the set full, so every subsequent poll skips every pick and the
-// board just stays empty with no error. Deriving the set from `state.picks`
-// each tick makes Reset Draft and Reset Everything self-healing: clearing
-// `picks` clears the set. Vanilla's third site, CSV import, is NOT self-healing
-// — `setPlayers` deliberately leaves `picks` and `pickCounter` untouched — so
-// that one is handled explicitly at its call site in SetupPanel.importCsv,
-// which calls `St.resetDraft()` when sync is enabled.
+// Why the store side: vanilla kept a long-lived `processedPickNos` set and had
+// to clear it by hand in three places (CSV import, Reset Draft, Reset
+// Everything). Miss any one of those call sites and the failure is silent —
+// Reset Draft mid-draft would leave the set full, so every subsequent poll
+// skips every pick and the board just stays empty with no error. Intersecting
+// with `state.picks` makes Reset Draft and Reset Everything self-healing:
+// clearing `picks` empties the intersection. Vanilla's third site, CSV import,
+// is NOT self-healing — `setPlayers` deliberately leaves `picks` and
+// `pickCounter` untouched — so that one is handled explicitly at its call site
+// in SetupPanel.importCsv, which calls `St.resetDraft()` when sync is enabled.
+//
+// Why the Sleeper side: a MANUAL pick shares Sleeper's numbering space —
+// `St.draftPlayer` with no override stamps `pickNo = ++pickCounter` — so a set
+// derived from `state.picks` alone makes a manual pick at number N mask
+// Sleeper's real pick N for the rest of the draft. That is not hypothetical:
+// the documented correction for a bad `matchPickToPlayer` name match is to ✕
+// the wrong player and manually draft the right one, which is precisely how a
+// manual pick lands on a number Sleeper has not sent yet. The masked player
+// then sits on the board as available, badged and recommended, with nothing
+// anywhere saying a pick was skipped. Tracking what we actually imported keeps
+// vanilla's semantics (it seeded once at startPolling and only ever added
+// inside the poll callback) while keeping the reset self-healing above.
+//
+// Consequence, and it is the same one vanilla had: two picks in `state.picks`
+// can share a number. DraftLog keys its rows on `pickNo + ':' + playerId` for
+// exactly that reason.
+let imported = new Set();
+
+// Called by start() once per polling session, before the first tick.
+export function beginPolling() {
+  imported = new Set(St.getState().picks.map((p) => p.pickNo));
+}
+
 //
 // Pick numbers the user has explicitly undone, for the life of the page. The
 // store-derived set alone cannot cover these: an undo REMOVES the pick from
@@ -45,12 +69,14 @@ export function clearSuppressed() {
 
 // Exported so the reset-mid-sync behaviour can be tested without a browser.
 export function applyPicks(picks) {
-  const processed = new Set(St.getState().picks.map((p) => p.pickNo));
+  const inStore = new Set(St.getState().picks.map((p) => p.pickNo));
   // Ascending pick order so draft-log order and pickCounter track the real draft.
   for (const pick of picks.slice().sort((a, b) => a.pick_no - b.pick_no)) {
     if (!pick.player_id) continue; // slot not yet picked
-    if (processed.has(pick.pick_no) || suppressed.has(pick.pick_no)) continue;
-    processed.add(pick.pick_no); // guards against a duplicate pick_no in one payload
+    if (suppressed.has(pick.pick_no)) continue;
+    if (imported.has(pick.pick_no) && inStore.has(pick.pick_no)) continue;
+    imported.add(pick.pick_no);
+    inStore.add(pick.pick_no); // both, so a duplicate pick_no within one payload is still deduped
 
     const team = St.getState().teams.find((t) => t.rosterId === pick.roster_id) || null;
     let matched = Sleeper.matchPickToPlayer(pick, St.getState().players);
@@ -88,6 +114,7 @@ export function useSleeperSync() {
     if (!mountedRef.current) return;
     const draftId = St.getState().settings.sleeperDraftId;
     if (!draftId) return;
+    beginPolling();
 
     const gen = genRef.current;
     const alive = () => mountedRef.current && genRef.current === gen;
