@@ -148,6 +148,13 @@ Four, each individually approved by the owner:
    `app.js:465` tried to remove, so that call was always a no-op. Approved by
    the owner after the discrepancy surfaced in Task 1's review.
 
+5. The sync status dot now reflects reality. `main`'s `render()` ended with an
+   unconditional `renderSyncStatus({ ok: true })`, so any store change repainted
+   the dot green even while polling was failing. `TopBar` now shows the real
+   status until the next successful poll. Found during the final whole-branch
+   review; strictly an improvement, recorded here because it is a fifth
+   difference from vanilla rather than one of the four planned.
+
 Everything else is markup-for-markup identical.
 
 ## Error handling
