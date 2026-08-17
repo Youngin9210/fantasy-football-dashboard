@@ -1,8 +1,10 @@
 // Shared plumbing for the verification harnesses — currently just
 // tools/screenshot-diff.mjs, after tools/dom-diff.mjs was retired.
 //
-// Extracted verbatim from the original dom-diff.mjs, so any harness built on it
-// drives the same browser, the same static server, and the same seeded scenarios.
+// Extracted from the original dom-diff.mjs, so any harness built on it drives
+// the same browser, the same static server, and the same seeded scenarios. Each
+// scenario names the view it describes; a harness must prove the page rendered
+// that view before its measurements mean anything.
 // No dependencies: a hand-rolled static file server, and CDP driven over
 // Node's built-in global WebSocket against chrome-headless-shell.
 import { spawn } from 'node:child_process';
@@ -36,7 +38,13 @@ const BOARD = [
 
 const draft = (id, teamId, pickNo) => ({ ...BOARD.find((p) => p.id === id), drafted: true, draftedByTeamId: teamId, pickNo });
 const base = (over = {}) => ({
+  // view is seeded EXPLICITLY. settings.view defaults to 'glance' in the app, so
+  // a scenario that leaves it out renders the Glance card -- which meant every
+  // scenario below, all of which describe the Board, was being compared against
+  // a baseline rendering the Board while the head build rendered Glance. The
+  // tool reported enormous differences for a reason unrelated to any regression.
   settings: { numTeams: 10, rosterSpots: SPOTS, positionLimits: LIMITS, sortMode: 'rank',
+    view: 'board',
     myTeamId: null, scoringNotes: '', sleeperLeagueId: '', sleeperDraftId: '',
     sleeperUserId: '', sleeperSyncEnabled: false, ...(over.settings || {}) },
   teams: over.teams === undefined ? TEAMS : over.teams,
@@ -45,27 +53,51 @@ const base = (over = {}) => ({
   pickCounter: over.pickCounter || 0,
 });
 
+// Rankings, ten teams, my team chosen, one pick of mine on the board. Used
+// twice -- once as a Board scenario and once as a Glance scenario -- so the two
+// views are exercised over identical data.
+//
+// sleeperSyncEnabled stays false on purpose: the Glance card's sync line renders
+// "synced 3s ago" from a live clock and re-renders every second, which would
+// make its screenshot differ from itself between two captures.
+const teamSelected = (view) => base({
+  settings: { sortMode: 'need', myTeamId: 't0', view },
+  players: BOARD.map((p) => (p.id === 'p2' ? draft('p2', 't0', 1) : p)),
+  picks: [{ pickNo: 1, round: 1, teamId: 't0', playerId: 'p2', rawName: 'Bijan Robinson' }],
+  pickCounter: 1,
+});
+
+// Every scenario declares the `view` it is describing, and a harness must prove
+// the page actually rendered that view before comparing anything -- see
+// ENSURE_VIEW_SOURCE. Where the seeded state cannot say (no state at all, or a
+// settings object saved before settings.view existed) the harness clicks the
+// real toggle instead.
 export const SCENARIOS = [
-  { name: 'fresh install', state: null, expectRows: false },
+  { name: 'fresh install', state: null, view: 'board', expectRows: false },
   // main's DEFAULT_ROSTER was 15 slots with 6 BN and DST before K; a raw 'DEF'
-  // player is what main's old cleanPos produced from a D/ST column.
-  { name: 'pre-branch save', expectRows: true, state: {
+  // player is what main's old cleanPos produced from a D/ST column. No
+  // settings.view either, which is the point: this is a save from before the
+  // key existed, so the harness has to reach the Board through the toggle.
+  { name: 'pre-branch save', expectRows: true, view: 'board', state: {
       settings: { numTeams: 10, myTeamId: 't1',
         rosterSpots: ['QB','RB','RB','WR','WR','TE','FLEX','DST','K','BN','BN','BN','BN','BN','BN'] },
       teams: TEAMS,
       players: [...BOARD, { id: 'pd', rank: 170, name: 'Eagles', team: 'PHI', pos: 'DEF', bye: 9 }],
       picks: [], pickCounter: 0 } },
-  { name: 'rankings, no team, need mode', expectRows: true,
+  { name: 'rankings, no team, need mode', expectRows: true, view: 'board',
     state: base({ settings: { sortMode: 'need', myTeamId: null } }) },
-  { name: 'rankings, team selected, need mode', expectRows: true,
-    state: base({ settings: { sortMode: 'need', myTeamId: 't0' },
-      players: BOARD.map((p) => (p.id === 'p2' ? draft('p2', 't0', 1) : p)),
-      picks: [{ pickNo: 1, round: 1, teamId: 't0', playerId: 'p2', rawName: 'Bijan Robinson' }],
-      pickCounter: 1 }) },
+  { name: 'rankings, team selected, need mode', expectRows: true, view: 'board',
+    state: teamSelected('board') },
+  // The default view: the one users actually land on, and the only one that was
+  // never compared before this scenario existed.
+  { name: 'glance, team selected', expectRows: false, view: 'glance',
+    state: teamSelected('glance') },
   // Three QBs on my roster hits the QB:3 limit, so the divider must render.
   // Approved behavior change #2 lives here: the excluded group now renders
   // after the drafted rows instead of before, which reorders table rows.
-  { name: 'at position limit', expectRows: true, reordersRows: true,
+  // Only meaningful against a baseline that predates the Preact rewrite;
+  // screenshot-diff.mjs ignores the flag for any later baseline.
+  { name: 'at position limit', expectRows: true, view: 'board', reordersRows: true,
     state: base({ settings: { sortMode: 'need', myTeamId: 't0' },
       players: BOARD.map((p) => (['p4','p5','p6'].includes(p.id)
         ? draft(p.id, 't0', ['p4','p5','p6'].indexOf(p.id) + 1) : p)),
@@ -73,11 +105,11 @@ export const SCENARIOS = [
         playerId: ['p4','p5','p6'][n - 1], rawName: 'QB' })),
       pickCounter: 3 }) },
   // More drafted players than roster spots: picksRemaining must floor at 0.
-  { name: 'over-full roster', expectRows: true,
+  { name: 'over-full roster', expectRows: true, view: 'board',
     state: base({ settings: { sortMode: 'need', myTeamId: 't0', rosterSpots: ['QB','BN'] },
       players: BOARD.map((p, i) => (i < 5 ? draft(p.id, 't0', i + 1) : p)),
       pickCounter: 5 }) },
-  { name: 'empty rankings', expectRows: false, state: base({ players: [] }) },
+  { name: 'empty rankings', expectRows: false, view: 'board', state: base({ players: [] }) },
 ];
 
 export const STORAGE_KEY = 'ffDraftState.v1';
@@ -112,6 +144,39 @@ function countRows() {
     playerRows: document.querySelectorAll(
       'table.players tbody tr:not(.need-notice):not(.limit-divider)').length,
   };
+}
+`;
+
+// Concatenate AFTER ENSURE_SETUP_OPEN_SOURCE, which defines nextFrame; two
+// `const nextFrame` declarations in one evaluated scope is a syntax error.
+//
+// The scenarios that seed settings.view get their view for free, but two of them
+// cannot: 'fresh install' has no saved state at all, and 'pre-branch save'
+// carries a settings object from before settings.view existed. Both fall back to
+// the app's default (Glance), so the harness clicks the real Board button, the
+// same way ensureSetupOpen drives the real Setup button.
+export const ENSURE_VIEW_SOURCE = String.raw`
+// Read from the DOM, never trusted from what was seeded: Glance renders a single
+// .glance-card and no table, the Board renders main.layout. A build predating
+// the split renders the board layout and has no #viewToggle, so it reports
+// 'board' -- which is why the caller compares this against the scenario's
+// declared view rather than assuming the click worked.
+function currentView() {
+  if (document.querySelector('.glance-card')) return 'glance';
+  if (document.querySelector('main.layout')) return 'board';
+  return null;
+}
+
+async function ensureView(want) {
+  if (!want || currentView() === want) return false;
+  const toggle = document.getElementById('viewToggle');
+  if (!toggle) return false;
+  const btn = [...toggle.querySelectorAll('button')]
+    .find((b) => b.textContent.trim().toLowerCase() === want);
+  if (!btn) throw new Error('#viewToggle has no "' + want + '" button');
+  btn.click();
+  await nextFrame();
+  return true;
 }
 `;
 
