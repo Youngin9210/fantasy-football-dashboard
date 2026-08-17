@@ -526,6 +526,15 @@ the pick actually costs you, which is true even when unavoidable; the badge is
 "you could have done better here", which is only true sometimes. The raw penalty
 is uniform across candidates at a position, so it never distorts their ordering.
 
+> **SUPERSEDED 2026-08-17 — the two paragraphs above and the pairing test they
+> ask for below.** The uniformity argument holds *within* a position and fails
+> *across* positions: `tools/calibrate-bye.mjs` showed the first TE, filling an
+> empty STARTING slot, demoted below third-RB FLEX depth by a shortfall no TE
+> candidate could avoid. The score now uses `avoidableByeShortfall` too, so score
+> and badge read the same measure, and the pairing tests pin THAT instead. See
+> "Revised 2026-08-17" in
+> `docs/superpowers/specs/2026-08-17-bye-week-weighting-design.md`.
+
 Verified behavior — the badge appears in exactly the third row:
 
 | Rostered at RB (2 slots) | Candidate | actual / floor | Badge |

@@ -44,8 +44,9 @@ const MY_TEAM = [
 // Both RB slots and both WR slots are full (see MY_TEAM), so every RB/WR
 // candidate below routes to FLEX, not to its own position -- which is exactly
 // the branch where the FLEX_BONUS/BYE_PENALTY interaction described in Step 1b
-// lives. TE has no rostered bodies yet, so it still routes to FILLS TE, giving
-// a starter-slot (not FLEX) example of an unavoidable bye cost for contrast.
+// lives. TE has no rostered bodies yet, so it still routes to FILLS TE: the
+// starter-slot (not FLEX) contrast, and the row that made the score switch from
+// the raw shortfall to the avoidable one. See the closing note.
 const BOARD = [
   { pos: 'RB', rank: 40, name: 'Fresh-bye RB', bye: 14 },
   { pos: 'RB', rank: 40, name: 'Bye7-conflict RB', bye: 7 },
@@ -88,9 +89,16 @@ console.log(
   `never outscore a better-ranked unbadged one. At 3 the conflict candidate still\n` +
   `beats its own raw rank (37 < 40); at 12 it scores worse than raw rank (46 > 40).\n` +
   `Same pattern on "Fresh-bye WR" vs "Bye9-conflict WR" (#45, cancels to 45 at 6).\n` +
-  `This is an accident of two independently chosen constants, not a decision --\n` +
-  `see the "First TE pick" row for contrast: its shortfall (1) is UNAVOIDABLE\n` +
-  `(no byeWarning badge; it is the first body at TE, so every candidate faces it),\n` +
-  `and it stacks with STARTER_BONUS (12) instead of FLEX_BONUS (6), so it only\n` +
-  `cancels back to raw rank at byePenalty 12, not 6.`
+  `This is an accident of two independently chosen constants, not a decision.\n` +
+  `\n` +
+  `note: "First TE pick" scores 30 at EVERY weight above, because the score now\n` +
+  `charges only the AVOIDABLE shortfall. His raw shortfall is 1 -- he is the first\n` +
+  `body at TE, so he is short in his own bye week -- but every TE on the board\n` +
+  `faces exactly that, so no different pick avoids it and it is charged to neither\n` +
+  `the score nor the badge. This row is why: charging the RAW shortfall scored him\n` +
+  `33 / 36 / 42 at penalty 3 / 6 / 12, against the fresh-bye RB's 34, so at 6 and\n` +
+  `12 a FLEX/bench body outranked the only pick that fills an EMPTY STARTING SLOT.\n` +
+  `The penalty was uniform across TE candidates but not across positions. With the\n` +
+  `avoidable measure the starter stays first at every weight, while a genuinely\n` +
+  `stacked bye is still charged in full (the two badged FLEX rows above).`
 );

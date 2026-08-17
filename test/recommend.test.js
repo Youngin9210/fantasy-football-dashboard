@@ -373,19 +373,76 @@ test('the bye penalty is added to a BENCH score', () => {
 
 test('the bye penalty reaches the FILLS branch, not only BENCH', () => {
   // The regression this guards: applying the penalty at one return site and
-  // forgetting the other three.
+  // forgetting the other four.
   //
-  // In the FILLS branch a position's slots are by definition not yet full, so
-  // total <= slots and EVERY bye causes a shortfall — there is no clean-FILLS
-  // fixture to compare against. Isolate the penalty with byePenalty: 0 instead.
-  const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
+  // The state here is HAND-BUILT rather than from rosterState, and that is the
+  // point. rosterState cannot produce an open starting slot at a position that
+  // already holds slots-many bodies — assignRosterSlots fills every dedicated
+  // slot before FLEX/BN — and without that depth a FILLS candidate's AVOIDABLE
+  // shortfall is 0 by construction (pinned by the next test). Since the score
+  // now charges the avoidable measure, the only way to exercise the penalty on
+  // THIS arm is a state with an open WR slot behind two WRs on byes 7 and 10.
+  assert.equal(avoidableByeShortfall(7, [7, 10], 2), 1,
+    'the fixture must have something avoidable to charge');
+  const s = {
+    openStarters: { WR: 1 }, openFlex: 0, posCounts: {},
+    posByes: { WR: [7, 10] }, posSlots: { WR: 2 },
+    picksRemaining: 5, kdefNeeded: 0, kdefUrgent: false,
+  };
   const cand = { pos: 'WR', rank: 40, bye: 7 };
   const withPenalty = scorePlayer(cand, s, {}, {});
   const without = scorePlayer(cand, s, {}, { byePenalty: 0 });
   assert.equal(withPenalty.reason, 'FILLS WR');
   assert.equal(without.score, 40 - STARTER_BONUS);
-  assert.equal(withPenalty.score - without.score, BYE_PENALTY * 2,
-    'two players for two slots means both bye weeks are short');
+  assert.equal(withPenalty.score, 40 - STARTER_BONUS + BYE_PENALTY);
+  assert.equal(withPenalty.score - without.score, BYE_PENALTY,
+    'a third body stacking week 7 behind byes 7 and 10 costs one avoidable week');
+});
+
+test('a real roster state charges nothing on an open starting slot', () => {
+  // The other half of the test above, and the whole reason the score moved off
+  // the raw shortfall. `required` caps at the bodies rostered and every
+  // dedicated slot fills before FLEX/BN, so an OPEN starting slot means
+  // bodies <= slots: each finite bye costs exactly one week, the no-such-week
+  // floor costs the same, and the difference is 0. Nobody at the position could
+  // have dodged it, so nobody is taxed for it.
+  const empty = rosterState(SPOTS, []);
+  const te = scorePlayer({ pos: 'TE', rank: 42, bye: 8 }, empty, {});
+  assert.equal(te.reason, 'FILLS TE');
+  assert.equal(byeShortfall(8, undefined, 1), 1, 'the raw cost is real...');
+  assert.equal(te.score, 42 - STARTER_BONUS, '...and unavoidable, so uncharged');
+  assert.equal(te.byeWarning, null);
+
+  // Two bodies against two WR slots, both on bye 7: raw 2, avoidable 0.
+  const oneWr = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
+  const wr = scorePlayer({ pos: 'WR', rank: 40, bye: 7 }, oneWr, {});
+  assert.equal(wr.reason, 'FILLS WR');
+  assert.equal(byeShortfall(7, [7], 2), 2);
+  assert.equal(wr.score, 40 - STARTER_BONUS, 'no different WR bye would have helped');
+  assert.equal(wr.byeWarning, null);
+});
+
+test('an empty starting slot outranks bench depth despite an unavoidable bye', () => {
+  // tools/calibrate-bye.mjs, reduced to the row that forced this change. RB
+  // slots full (byes 7 and 10), FLEX open, TE empty. The first TE fills an
+  // EMPTY STARTING SLOT and is the most valuable pick on the board, but under
+  // the raw-shortfall score he was demoted below FLEX depth: 42 - 12 + 6*1 = 36
+  // against the fresh-bye RB's 40 - 6 + 0 = 34 (and 42 at byePenalty 12).
+  // Charging only the avoidable shortfall restores him: 42 - 12 + 0 = 30.
+  const s = rosterState(SPOTS, [
+    { pos: 'RB', rank: 6, bye: 7 }, { pos: 'RB', rank: 9, bye: 10 },
+  ]);
+  const firstTe = { pos: 'TE', rank: 42, bye: 8 };
+  const freshRb = { pos: 'RB', rank: 40, bye: 14 };
+  const te = scorePlayer(firstTe, s, LIMITS);
+  const rb = scorePlayer(freshRb, s, LIMITS);
+  assert.equal(te.reason, 'FILLS TE');
+  assert.equal(rb.reason, 'FILLS FLEX');
+  assert.equal(te.score, 30);
+  assert.equal(rb.score, 34);
+  assert.ok(te.score < rb.score, 'filling an empty starting slot wins');
+  assert.equal(recommendOrder([freshRb, firstTe], s, LIMITS)[0].player.pos, 'TE',
+    'and it wins through the real board sort, not just by score arithmetic');
 });
 
 test('the bye penalty reaches the FLEX branch', () => {
@@ -397,31 +454,58 @@ test('the bye penalty reaches the FLEX branch', () => {
 });
 
 test('the bye penalty reaches the K/DST WAIT branch', () => {
-  const s = rosterState(SPOTS, []);
+  // A K already rostered on bye 7 (so the K slot is filled -> WAIT, not FILLS)
+  // and a second K on bye 7 behind him. One K slot, two bodies: raw 1 and
+  // avoidable 1, because any other bye would have covered week 7.
+  assert.equal(byeShortfall(7, [7], 1), 1);
+  assert.equal(avoidableByeShortfall(7, [7], 1), 1);
+  const s = rosterState(SPOTS, [{ pos: 'K', rank: 140, bye: 7 }]);
+  assert.equal(s.kdefUrgent, false, 'plenty of picks left, so this is the WAIT arm');
   const k = scorePlayer({ pos: 'K', rank: 150, bye: 7 }, s, {});
   assert.equal(k.reason, 'WAIT');
-  // One slot, one body: its own bye is always a shortfall of 1.
   assert.equal(k.score, 150 + KDEF_PENALTY + BYE_PENALTY);
+  assert.equal(k.byeWarning, 'BYE 7 ×1', 'and the badge agrees with the charge');
 });
 
-test('the bye penalty reaches the urgent K/DST FILLS branch too', () => {
-  // The restructured function has FIVE score-assignment sites, not four: the
-  // urgent K/DST case is a separate arm from WAIT. Skipping the penalty on that
-  // arm alone left every other test in this suite green, so it needs its own.
+test('a lone K is quiet in BOTH the score and the badge', () => {
+  // Was 'the bye penalty reaches the urgent K/DST FILLS branch too', asserting
+  // 150 - 12 + BYE_PENALTY while byeWarning stayed null — the old pairing, where
+  // the score charged the RAW shortfall and only the badge used the avoidable
+  // one. One K slot with this K the only body: every K on the board is short in
+  // his own bye week, so no different pick helps, and now NEITHER the score nor
+  // the badge says anything. A mutant putting the raw shortfall back in the
+  // score scores 144 here and fails.
   // 13 non-K/DST players -> 3 picks left against 2 K/DST slots -> urgent.
   const thirteen = Array.from({ length: 13 }, (_, i) => p('WR', i + 1));
   const s = rosterState(SPOTS, thirteen);
   assert.equal(s.kdefUrgent, true, 'the hold-back trigger must still fire here');
   const k = scorePlayer({ pos: 'K', rank: 150, bye: 7 }, s, {});
   assert.equal(k.reason, 'FILLS K');
-  // One K slot, this K the only body: its own bye is a shortfall of 1.
-  assert.equal(k.score, 150 - STARTER_BONUS + BYE_PENALTY);
-  // ...and that shortfall is UNAVOIDABLE — every K on the board is short in his
-  // own bye week here, so no different pick would have helped and the badge must
-  // stay quiet. This assertion previously expected 'BYE 7 ×1', when byeWarning
-  // was derived from the raw shortfall. The two lines together are the pairing:
-  // the RAW penalty is still in the score above while the badge is suppressed.
+  assert.equal(byeShortfall(7, undefined, 1), 1, 'the raw shortfall is real...');
+  assert.equal(avoidableByeShortfall(7, undefined, 1), 0, '...and unavoidable');
+  assert.equal(k.score, 150 - STARTER_BONUS);
   assert.equal(k.byeWarning, null);
+});
+
+test('the bye penalty reaches the urgent K/DST FILLS branch too', () => {
+  // The restructured function has FIVE score-assignment sites, not four: the
+  // urgent K/DST case is a separate arm from WAIT. Skipping the penalty on that
+  // arm alone left every other test in this suite green, so it needs its own.
+  //
+  // Hand-built state, for the same reason as the FILLS WR test above: an open
+  // starting slot never coexists with slots-many bodies in a real rosterState,
+  // and without that depth there is no avoidable shortfall to charge on this arm.
+  assert.equal(avoidableByeShortfall(7, [7], 1), 1);
+  const s = {
+    openStarters: { K: 1 }, openFlex: 0, posCounts: {},
+    posByes: { K: [7] }, posSlots: { K: 1 },
+    picksRemaining: 1, kdefNeeded: 1, kdefUrgent: true,
+  };
+  const k = scorePlayer({ pos: 'K', rank: 150, bye: 7 }, s, {});
+  assert.equal(k.reason, 'FILLS K');
+  assert.equal(k.score, 150 - STARTER_BONUS + BYE_PENALTY);
+  assert.equal(scorePlayer({ pos: 'K', rank: 150, bye: 7 }, s, {}, { byePenalty: 0 }).score,
+    150 - STARTER_BONUS);
 });
 
 test('byeWarning names the week and count, and is null when covered', () => {
@@ -448,11 +532,20 @@ test('an excluded player gets no bye commentary and stays Infinity', () => {
   assert.equal(r.byeWarning, null);
 });
 
-test('weights.byePenalty overrides the constant', () => {
-  const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
-  const cand = { pos: 'WR', rank: 40, bye: 7 };
+test('weights.byePenalty overrides the constant, and scales the AVOIDABLE count', () => {
+  // Two RBs already on bye 7 against two RB slots, a third RB on bye 7: raw 2,
+  // avoidable 1. The injected weight multiplies the avoidable count, so the gap
+  // is 30 and not 60 — the fixture discriminates the two measures rather than
+  // just proving the override is wired up.
+  assert.equal(byeShortfall(7, [7, 7], 2), 2);
+  assert.equal(avoidableByeShortfall(7, [7, 7], 2), 1);
+  const s = rosterState(SPOTS, [
+    { pos: 'RB', rank: 5, bye: 7 }, { pos: 'RB', rank: 20, bye: 7 },
+  ]);
+  const cand = { pos: 'RB', rank: 50, bye: 7 };
   const base = scorePlayer(cand, s, {}, { byePenalty: 0 }).score;
-  assert.equal(scorePlayer(cand, s, {}, { byePenalty: 30 }).score - base, 30 * 2);
+  assert.equal(base, 50 - FLEX_BONUS);
+  assert.equal(scorePlayer(cand, s, {}, { byePenalty: 30 }).score - base, 30 * 1);
 });
 
 test('a player with no bye data is never penalized', () => {
@@ -462,15 +555,19 @@ test('a player with no bye data is never penalized', () => {
   assert.equal(r.byeWarning, null);
 });
 
-// --- Badge only an AVOIDABLE shortfall -------------------------------------
+// --- Score AND badge use the AVOIDABLE shortfall ---------------------------
 //
 // Found in review: on an empty roster 8 of 8 candidates carried a non-null
 // byeWarning, because the first player at any position is always short in his
 // own bye week and `required` caps at `total`. A warning that always fires
-// teaches the user to ignore it, so the BADGE is derived from
-// avoidableByeShortfall while the SCORE keeps the raw byeShortfall. The pairing
-// tests below exist because switching BOTH to avoidable is the plausible wrong
-// move, and it would silently delete the penalty this feature exists to apply.
+// teaches the user to ignore it, so the BADGE was derived from
+// avoidableByeShortfall while the SCORE kept the raw byeShortfall.
+//
+// That split is gone. tools/calibrate-bye.mjs showed the raw penalty was uniform
+// only WITHIN a position, so across positions it demoted the first body at an
+// empty starting slot below bench depth — see 'an empty starting slot outranks
+// bench depth' above. Both now read the same avoidable measure, and the pairing
+// tests below pin THAT: they fail if the score ever goes back to raw.
 import { avoidableByeShortfall } from '../js/recommend.js';
 
 test('the first player at a position is short but not badged', () => {
@@ -479,7 +576,9 @@ test('the first player at a position is short but not badged', () => {
   assert.equal(avoidableByeShortfall(7, [], 2), 0,
     'every RB on the board is short in his own bye week here — not a choice');
   const s = rosterState(SPOTS, []);
-  assert.equal(scorePlayer({ pos: 'RB', rank: 30, bye: 7 }, s, {}).byeWarning, null);
+  const r = scorePlayer({ pos: 'RB', rank: 30, bye: 7 }, s, {});
+  assert.equal(r.byeWarning, null);
+  assert.equal(r.score, 30 - STARTER_BONUS, 'and not charged for it either');
 });
 
 test('a fresh bye against covered slots is neither short nor badged', () => {
@@ -517,33 +616,47 @@ test('two bodies against two slots is unavoidable, so it is not badged', () => {
   assert.equal(scorePlayer({ pos: 'WR', rank: 40, bye: 11 }, s, {}).byeWarning, null);
 });
 
-test('the score keeps the RAW penalty when the badge is suppressed', () => {
-  // THE pairing. Table row 4 again: the badge is silent because a different bye
-  // would not have helped, but the pick still costs two starter-weeks and must
-  // still be charged for them. A mutant deriving `score` from
-  // avoidableByeShortfall would drop 2 * BYE_PENALTY here and stay green on
-  // every byeWarning assertion in this file.
+test('an unavoidable shortfall is charged to NEITHER the score nor the badge', () => {
+  // THE pairing, first direction. Table row 4 again: one WR rostered on bye 7,
+  // candidate WR on bye 11, two WR slots. Raw 2, avoidable 0 — two players
+  // cannot cover two slots in either bye week, whatever byes they hold, so no
+  // other pick on the board would have been better and the pick is charged
+  // nothing. This test replaces 'the score keeps the RAW penalty when the badge
+  // is suppressed', which asserted 40 - 12 + 6*2 = 40 here; a mutant putting the
+  // raw shortfall back into the score scores exactly that 40 instead of 28.
+  assert.equal(byeShortfall(11, [7], 2), 2);
+  assert.equal(avoidableByeShortfall(11, [7], 2), 0);
   const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
   const r = scorePlayer({ pos: 'WR', rank: 40, bye: 11 }, s, {});
-  assert.equal(r.byeWarning, null, 'badge suppressed');
-  assert.equal(r.score, 40 - STARTER_BONUS + BYE_PENALTY * 2, 'raw penalty still charged');
+  assert.equal(r.byeWarning, null, 'badge silent');
+  assert.equal(r.score, 40 - STARTER_BONUS, 'and the score silent with it');
 });
 
-test('the badge counts only the avoidable weeks, not the raw shortfall', () => {
-  // Both numbers are non-zero here and they DIFFER: two RBs already on bye 7
-  // against 2 RB slots, a third RB on bye 7. Raw shortfall 2, avoidable 1 (one
-  // of those two short weeks is structural depth, not this pick's fault).
-  // A badge built from the raw number would read "×2" — same nullity, wrong
-  // count — so this is the assertion that catches that mutant.
+test('score and badge count the SAME weeks when raw and avoidable differ', () => {
+  // THE pairing, second direction, and the one that discriminates the measures
+  // by arithmetic rather than by nullity: two RBs already on bye 7 against 2 RB
+  // slots, a third RB on bye 7. Raw 2, avoidable 1 (one of those two short weeks
+  // is structural depth, not this pick's fault). The badge says ×1 and the score
+  // is charged for 1, not 2 — the previous version of this test asserted
+  // 50 - 6 + 6*2 = 56 for the score, so a raw-shortfall mutant is caught here on
+  // the number even where it is caught nowhere on nullity.
   assert.equal(byeShortfall(7, [7, 7], 2), 2);
   assert.equal(avoidableByeShortfall(7, [7, 7], 2), 1);
   const s = rosterState(SPOTS, [
     { pos: 'RB', rank: 5, bye: 7 }, { pos: 'RB', rank: 20, bye: 7 },
   ]);
-  const r = scorePlayer({ pos: 'RB', rank: 50, bye: 7 }, s, {});
+  const cand = { pos: 'RB', rank: 50, bye: 7 };
+  const r = scorePlayer(cand, s, {});
+  const base = scorePlayer(cand, s, {}, { byePenalty: 0 }).score;
   assert.equal(r.byeWarning, 'BYE 7 ×1', 'the badge says ×1, not the raw ×2');
-  assert.equal(r.score, 50 - FLEX_BONUS + BYE_PENALTY * 2,
-    'the score charges the RAW 2, not the avoidable 1');
+  assert.equal(r.score, 50 - FLEX_BONUS + BYE_PENALTY * 1);
+  // Stated as the invariant itself, so it survives a fixture change: whatever the
+  // slot bonus was, the penalty in the score is BYE_PENALTY times the number the
+  // badge printed.
+  assert.equal(r.score - base, BYE_PENALTY * avoidableByeShortfall(7, [7, 7], 2),
+    'the score charges the avoidable count');
+  assert.notEqual(r.score - base, BYE_PENALTY * byeShortfall(7, [7, 7], 2),
+    'and NOT the raw one — a score built from byeShortfall fails here');
 });
 
 test('a missing candidate bye is never avoidable', () => {

@@ -112,11 +112,22 @@ function byeShortfall(candidateBye, rosteredByes = [], startersNeeded = 0) {
 // structural (missing depth), not a bye clash the user picked. Only the excess
 // over that floor is something a different pick would have fixed.
 //
-// This drives the UI badge ONLY. The score keeps the RAW byeShortfall: an
-// unavoidable bye still costs you the week, and the raw penalty is uniform
-// across candidates at a position, so it never distorts their ordering. Swapping
-// the score to this value would silently delete the penalty this feature exists
-// to apply.
+// This drives BOTH the badge and the score. An earlier design charged the score
+// the RAW byeShortfall, on the argument that an unavoidable cost is uniform
+// across candidates at a position and so cannot reorder them. True within a
+// position, false ACROSS positions: tools/calibrate-bye.mjs showed the first TE
+// filling an EMPTY STARTING SLOT (rank 42 -> 30 with no penalty) demoted below
+// bench/FLEX depth at byePenalty 6 and 12 by a penalty no TE candidate could
+// avoid. Charging only the avoidable part keeps the real stacked-bye cost (a
+// third RB on an already-doubled week is still +6) while never taxing a pick for
+// a week nothing on the board could have covered.
+//
+// Consequence worth knowing: byeShortfall's `required` caps at what is rostered,
+// and assignRosterSlots fills every dedicated slot before FLEX/BN, so an open
+// starting slot at a position means bodies <= slots, every finite bye there
+// counts once, and the floor cancels it exactly. A FILLS-own-position score
+// therefore never carries a bye penalty by construction -- which is the demotion
+// above, fixed. Depth (FLEX/BENCH) is where the penalty bites.
 const NO_SUCH_WEEK = -1; // finite, so it counts as a real week, but one no player holds
 function avoidableByeShortfall(candidateBye, rosteredByes, startersNeeded) {
   const actual = byeShortfall(candidateBye, rosteredByes, startersNeeded);
@@ -173,14 +184,15 @@ function scorePlayer(player, state, limits = {}, weights = {}) {
   const rosteredByes = (state.posByes || {})[pos];
   const startersNeeded = (state.posSlots || {})[pos];
 
-  // Two DIFFERENT numbers on purpose, and they must not be collapsed into one.
-  // `shortfall` is what the pick actually costs and drives the score; `avoidable`
-  // is "a different bye would have been better" and drives the badge only.
-  const shortfall = byeShortfall(player.bye, rosteredByes, startersNeeded);
+  // ONE number, driving both the score and the badge on purpose: we only charge
+  // for a shortfall a different pick would have avoided, and we only badge what
+  // we charge. Reintroducing the raw byeShortfall here would tax candidates for a
+  // week no pick at their position could cover, which demoted an empty starting
+  // slot below bench depth (see avoidableByeShortfall's comment).
   const avoidable = avoidableByeShortfall(player.bye, rosteredByes, startersNeeded);
 
   return {
-    score: score + byePenalty * shortfall,
+    score: score + byePenalty * avoidable,
     reason,
     excluded: false,
     byeWarning: avoidable > 0 ? `BYE ${player.bye} ×${avoidable}` : null,

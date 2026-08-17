@@ -61,7 +61,39 @@ if (!SCENARIO) {
 }
 const BOARD_STATE = SCENARIO.state;
 const glance = (state) => ({ ...state, settings: { ...state.settings, view: 'glance' } });
-const GLANCE_STATE = glance(BOARD_STATE);
+
+// The Glance card renders exactly three picks (TAKE + two THEN), so the badged
+// candidate has to be inside that top three or there is no line to check.
+//
+// Since the score charges only the AVOIDABLE shortfall, a badged candidate is
+// ALWAYS bench/FLEX depth: an open starting slot at a position means bodies <=
+// slots there, which makes the avoidable shortfall 0 by construction, so nothing
+// filling an open starting slot is ever badged and everything that does outscores
+// the depth pick at a comparable rank. On the stacked scenario the still-open TE
+// slot put Brock Bowers (#12, 12 - 12 + 0 = 0) ahead of the badged Derrick Henry
+// (#5, 5 - 6 + 6 = 5) and pushed the bye line off the card entirely. Under the
+// previous raw-shortfall score Bowers carried an unavoidable +6 (score 6) and
+// Henry was third by one point, which is the only reason this ever passed.
+//
+// So the Glance seed drafts the TE away to another team: one extra pick in an
+// ordinary draft, not a tuning knob. Henry is still the same badged candidate at
+// the same score with the same badge text as on the Board above, and BOARD_STATE
+// itself is untouched, so the Board checks and screenshot-diff keep rendering the
+// scenario harness.mjs describes.
+const TE_TAKEN = 'p3';
+const teTaken = BOARD_STATE.players.find((p) => p.id === TE_TAKEN);
+if (!teTaken || teTaken.drafted || teTaken.pos !== 'TE') {
+  throw new Error(`the stacked scenario no longer has an undrafted TE at ${TE_TAKEN}`);
+}
+const GLANCE_STATE = glance({
+  ...BOARD_STATE,
+  players: BOARD_STATE.players.map((p) => (p.id === TE_TAKEN
+    ? { ...p, drafted: true, draftedByTeamId: 't1', pickNo: 3 }
+    : p)),
+  picks: [...BOARD_STATE.picks,
+    { pickNo: 3, round: 1, teamId: 't1', playerId: TE_TAKEN, rawName: teTaken.name }],
+  pickCounter: 3,
+});
 
 // The honest case for the missing-bye notice: a CSV with no bye column at all, so
 // nothing anywhere carries a bye and the weighting really does contribute nothing.
