@@ -52,6 +52,7 @@ const HEADER_ALIASES = {
   pos: ['pos', 'position'],
   bye: ['bye week', 'bye'],
   adp: ['adp', 'avg pick', 'average pick'],
+  ecrVsAdp: ['ecr vs. adp', 'ecr vs adp'],
 };
 
 function normalizeHeader(h) {
@@ -77,6 +78,19 @@ function cleanBye(raw) {
   if (!raw) return null;
   const m = String(raw).match(/\d+/);
   return m ? parseInt(m[0], 10) : null;
+}
+
+// The market gap: how far a player's expert consensus rank sits from where he is
+// actually drafted. Negative means drafted EARLIER than ranked.
+//
+// Shape-tested rather than coerced, deliberately. Number("") is 0, not NaN, so
+// coercion cannot distinguish an empty cell from a genuine zero -- and 0 is a
+// real value here ("drafted exactly on rank"). The neighbouring `adp` field uses
+// `parseFloat(...) || null`, which destroys a zero; that is harmless for a pick
+// number and would be a silent wrong answer for this one.
+function cleanMarketGap(raw) {
+  const s = String(raw ?? '').trim();
+  return /^[+-]?\d+$/.test(s) ? Number(s) : null;
 }
 
 // Parses rankings CSV text into an array of player objects (unassigned ids/drafted state).
@@ -109,6 +123,7 @@ function parseRankingsCsv(text) {
       pos: colMap.pos !== undefined ? normalizePos(r[colMap.pos]) : '',
       bye: colMap.bye !== undefined ? cleanBye(r[colMap.bye]) : null,
       adp: colMap.adp !== undefined ? parseFloat(r[colMap.adp]) || null : null,
+      ecrVsAdp: colMap.ecrVsAdp !== undefined ? cleanMarketGap(r[colMap.ecrVsAdp]) : null,
       drafted: false,
       draftedByTeamId: null,
       pickNo: null,
