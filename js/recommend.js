@@ -72,8 +72,19 @@ function rosterState(rosterSpots = [], myPlayers = []) {
   };
 }
 
-// How many starter-weeks this pick would leave unfillable at its own position,
-// because of bye overlap.
+// The WORST single week this pick would leave unfillable at its own position,
+// because of bye overlap — the PEAK weekly starter shortfall, not the season
+// total.
+//
+// Peak, not sum, is the whole point of the feature. A sum cannot tell a shared
+// bye from a spread pair while bodies <= slots, because each finite bye then
+// costs exactly one week whether it is shared or not: against two RB slots,
+// byes [9,9] and [9,6] both SUM to 2. So stacking your second starting RB onto
+// your first one's bye week was charged nothing and badged nothing, and
+// detection only began once bodies > slots — after the position group was
+// already stacked, which is the case the feature was built for. The maximum
+// over weeks separates them immediately: [9,9] peaks at 2 where the
+// no-such-week floor peaks at 1, so the stack is charged 1 and the spread 0.
 //
 // `required` is capped at what is actually rostered. Without that cap the metric
 // fires constantly early in the draft — one RB against two RB slots is "short"
@@ -98,7 +109,9 @@ function byeShortfall(candidateBye, rosteredByes = [], startersNeeded = 0) {
   let shortfall = 0;
   for (const week of weeks) {
     const onBye = all.filter((b) => b === week).length;
-    shortfall += Math.max(0, required - (total - onBye));
+    // Peak, not running total: see the note above. `+=` here is the defect this
+    // replaced, and the new stacking test in test/recommend.test.js fails on it.
+    shortfall = Math.max(shortfall, Math.max(0, required - (total - onBye)));
   }
   return shortfall;
 }
@@ -122,12 +135,22 @@ function byeShortfall(candidateBye, rosteredByes = [], startersNeeded = 0) {
 // third RB on an already-doubled week is still +6) while never taxing a pick for
 // a week nothing on the board could have covered.
 //
-// Consequence worth knowing: byeShortfall's `required` caps at what is rostered,
-// and assignRosterSlots fills every dedicated slot before FLEX/BN, so an open
-// starting slot at a position means bodies <= slots, every finite bye there
-// counts once, and the floor cancels it exactly. A FILLS-own-position score
-// therefore never carries a bye penalty by construction -- which is the demotion
-// above, fixed. Depth (FLEX/BENCH) is where the penalty bites.
+// The rule this produces, stated because a sum-based byeShortfall used to get it
+// wrong: a pick filling an EMPTY starting slot at its own position is charged
+// ONLY when it stacks onto a bye already held at that position.
+//
+//   - First body at a position, or a second on a week nobody holds: the actual
+//     peak equals the no-such-week floor, the difference is 0, and nothing is
+//     charged or badged. Nobody on the board could have dodged that week, which
+//     is the demotion described above, fixed.
+//   - Second starter doubling the first one's bye: the peak is one ABOVE the
+//     floor (two bodies both out in one week against two slots, versus one),
+//     so it IS charged and badged even though it fills an empty slot. That is
+//     the whole feature: an entire position group on one bye week.
+//
+// Under the old summed shortfall that second case cancelled to 0 as well, so the
+// dashboard happily recommended the RB who put both your starters on the same
+// week. Depth (FLEX/BENCH) was the only place the penalty bit.
 const NO_SUCH_WEEK = -1; // finite, so it counts as a real week, but one no player holds
 function avoidableByeShortfall(candidateBye, rosteredByes, startersNeeded) {
   const actual = byeShortfall(candidateBye, rosteredByes, startersNeeded);

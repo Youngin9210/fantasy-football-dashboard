@@ -57,7 +57,41 @@ const BOARD = [
   { pos: 'QB', rank: 65, name: 'Bye11-conflict QB (bench)', bye: 11 },
 ];
 
+// ------------------------------------------------ second board: STACKED STARTERS
+//
+// The first board above is depth-only: every RB/WR candidate is a third body, so
+// it is blind to the case the feature was actually asked for -- "can't have an
+// entire position group with the same bye week". Measured: this file's output was
+// byte-identical before and after byeShortfall changed from a season SUM to the
+// weekly PEAK, because a summed shortfall could not see a stacked pair at all
+// while bodies <= slots. A diagnostic used to choose BYE_PENALTY must be able to
+// see the class of picks the penalty now charges, so here it is.
+//
+// One RB rostered on bye 9 with the SECOND RB SLOT STILL OPEN. Every candidate
+// below is 'FILLS RB'; the ones on bye 9 would put both starting RBs out in the
+// same week and are charged, the ones on other byes are not. The two rank gaps are
+// the point: at penalty p a stacking candidate must be more than p ranks better
+// than a spreading one to still win, so p is exactly the rank gap the penalty
+// overturns.
+const STACK_TEAM = [{ pos: 'RB', rank: 6, name: 'my RB1', bye: 9 }];
+const STACK_BOARD = [
+  { pos: 'RB', rank: 14, name: 'Better RB, stacks bye9', bye: 9 },
+  { pos: 'RB', rank: 20, name: 'Even RB, stacks bye9', bye: 9 },
+  { pos: 'RB', rank: 21, name: 'Even RB, spreads (bye6)', bye: 6 },
+];
+
 const state = rosterState(SPOTS, MY_TEAM);
+const stackState = rosterState(SPOTS, STACK_TEAM);
+
+function printBoard(board, st, byePenalty) {
+  for (const r of recommendOrder(board, st, LIMITS, { byePenalty })) {
+    const warn = r.byeWarning ? `  ${r.byeWarning}` : '';
+    console.log(
+      `  ${String(r.score).padStart(4)}  #${String(r.player.rank).padStart(2)}  ` +
+      `${r.player.pos.padEnd(3)}  ${r.player.name.padEnd(26)} ${r.reason}${warn}`
+    );
+  }
+}
 
 console.log('Mid-draft roster: QB/RB/RB/WR/WR filled, TE and FLEX open.');
 console.log('RB rostered on byes 7 and 10; WR rostered on byes 9 and 12 (two');
@@ -68,16 +102,20 @@ console.log('bye score 0 and a stacked one not.');
 console.log(`STARTER_BONUS = ${STARTER_BONUS} (unchanged), FLEX_BONUS = ${FLEX_BONUS} (unchanged).\n`);
 
 for (const byePenalty of [3, 6, 12]) {
-  const ranked = recommendOrder(BOARD, state, LIMITS, { byePenalty });
-
   console.log(`=== BYE_PENALTY = ${byePenalty} ===`);
-  for (const r of ranked) {
-    const warn = r.byeWarning ? `  ${r.byeWarning}` : '';
-    console.log(
-      `  ${String(r.score).padStart(4)}  #${String(r.player.rank).padStart(2)}  ` +
-      `${r.player.pos.padEnd(3)}  ${r.player.name.padEnd(26)} ${r.reason}${warn}`
-    );
-  }
+  printBoard(BOARD, state, byePenalty);
+  console.log('');
+}
+
+console.log('Second roster: ONE RB rostered on bye 9, the second RB slot still');
+console.log('OPEN. Every candidate is FILLS RB. A bye-9 candidate puts both');
+console.log('starting RBs on the same bye week and is charged; the bye-6 one is');
+console.log('not. This is the case the feature was asked for, and the case a');
+console.log('summed shortfall could not see at all.\n');
+
+for (const byePenalty of [3, 6, 12]) {
+  console.log(`=== STACKED STARTERS, BYE_PENALTY = ${byePenalty} ===`);
+  printBoard(STACK_BOARD, stackState, byePenalty);
   console.log('');
 }
 
@@ -100,5 +138,18 @@ console.log(
   `12 a FLEX/bench body outranked the only pick that fills an EMPTY STARTING SLOT.\n` +
   `The penalty was uniform across TE candidates but not across positions. With the\n` +
   `avoidable measure the starter stays first at every weight, while a genuinely\n` +
-  `stacked bye is still charged in full (the two badged FLEX rows above).`
+  `stacked bye is still charged in full (the two badged FLEX rows above).\n` +
+  `\n` +
+  `note: the STACKED STARTERS board is where BYE_PENALTY should now be judged, and\n` +
+  `it is new. The first board's output is byte-identical before and after\n` +
+  `byeShortfall switched from a season SUM to the weekly PEAK, so the weight 6 was\n` +
+  `chosen without ever seeing the picks peak charges. On that second board every\n` +
+  `candidate FILLS an open starting slot, so nothing cancels the penalty the way\n` +
+  `FLEX_BONUS does above: the penalty is the entire difference between a stacked\n` +
+  `and a spread pick at the same rank. At penalty p a stacking candidate must be\n` +
+  `more than p ranks better to still win, so p IS the rank gap the penalty\n` +
+  `overturns: at 3 the #14 stacker beats the #21 spreader and the #20 stacker does\n` +
+  `not; at 6 the #14 stacker still wins by one point; at 12 even he loses. Read the\n` +
+  `weight as "how many ranking places a same-week bye clash is worth" and pick it\n` +
+  `from those rows. BYE_PENALTY is left at 6 here -- this is a diagnostic.`
 );

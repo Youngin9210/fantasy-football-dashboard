@@ -280,10 +280,19 @@ test('a bye of 0 is a real week, not missing data', () => {
   // 0 is finite but falsy. Swapping Number.isFinite for a truthiness check would
   // silently treat week 0 as "no bye" and skip the penalty entirely; nothing else
   // in the suite uses 0, so that mutation would otherwise ship undetected.
+  //
+  // These are PEAK weekly figures, not season sums. The two mixed-week rows below
+  // were 2 under the summed shortfall (one lost starter-week in week 0 plus one in
+  // week 7); the peak of those two weeks is 1. The rows that discriminate bye 0
+  // from missing data are the first two: a truthiness guard reads bye 0 as "no
+  // bye" and returns 0 for both.
   assert.equal(byeShortfall(0, [], 2), 1, 'a lone bye-0 player is short in week 0');
-  assert.equal(byeShortfall(0, [0], 2), 2, 'two players both on bye 0');
-  assert.equal(byeShortfall(0, [7], 2), 2, 'bye 0 counts as its own distinct week');
-  assert.equal(byeShortfall(7, [0], 2), 2, 'a rostered bye-0 is a real body AND a real week');
+  assert.equal(byeShortfall(0, [0], 2), 2,
+    'two players both on bye 0: week 0 loses both starters at once');
+  assert.equal(byeShortfall(0, [7], 2), 1,
+    'bye 0 is its own distinct week, so the byes spread and the worst week loses one');
+  assert.equal(byeShortfall(7, [0], 2), 1,
+    'a rostered bye-0 is a real body AND a real week, and a real week apart from 7');
 });
 
 test('degenerate inputs do not throw', () => {
@@ -375,13 +384,12 @@ test('the bye penalty reaches the FILLS branch, not only BENCH', () => {
   // The regression this guards: applying the penalty at one return site and
   // forgetting the other four.
   //
-  // The state here is HAND-BUILT rather than from rosterState, and that is the
-  // point. rosterState cannot produce an open starting slot at a position that
-  // already holds slots-many bodies — assignRosterSlots fills every dedicated
-  // slot before FLEX/BN — and without that depth a FILLS candidate's AVOIDABLE
-  // shortfall is 0 by construction (pinned by the next test). Since the score
-  // now charges the avoidable measure, the only way to exercise the penalty on
-  // THIS arm is a state with an open WR slot behind two WRs on byes 7 and 10.
+  // The state here is HAND-BUILT rather than from rosterState: rosterState cannot
+  // produce an open starting slot at a position that already holds slots-many
+  // bodies, because assignRosterSlots fills every dedicated slot before FLEX/BN.
+  // A real state DOES charge this arm — one RB rostered, the second RB slot open
+  // and a candidate stacking that bye, see the stacking tests below — this fixture
+  // just exercises the arm at a THIRD body, which only a hand-built state reaches.
   assert.equal(avoidableByeShortfall(7, [7, 10], 2), 1,
     'the fixture must have something avoidable to charge');
   const s = {
@@ -399,13 +407,14 @@ test('the bye penalty reaches the FILLS branch, not only BENCH', () => {
     'a third body stacking week 7 behind byes 7 and 10 costs one avoidable week');
 });
 
-test('a real roster state charges nothing on an open starting slot', () => {
-  // The other half of the test above, and the whole reason the score moved off
-  // the raw shortfall. `required` caps at the bodies rostered and every
-  // dedicated slot fills before FLEX/BN, so an OPEN starting slot means
-  // bodies <= slots: each finite bye costs exactly one week, the no-such-week
-  // floor costs the same, and the difference is 0. Nobody at the position could
-  // have dodged it, so nobody is taxed for it.
+test('an open starting slot is charged only when the pick STACKS a rostered bye', () => {
+  // The real rule, and the one an earlier SUMMED byeShortfall could not express.
+  // A pick filling its own position's empty slot is charged when — and only when —
+  // it doubles up on a bye that position already holds.
+  //
+  // Not charged: the first body at a position. `required` caps at the bodies
+  // rostered, so a lone TE is short in his own bye week and every TE on the board
+  // is short in his. Actual peak 1, no-such-week floor 1, avoidable 0.
   const empty = rosterState(SPOTS, []);
   const te = scorePlayer({ pos: 'TE', rank: 42, bye: 8 }, empty, {});
   assert.equal(te.reason, 'FILLS TE');
@@ -413,13 +422,87 @@ test('a real roster state charges nothing on an open starting slot', () => {
   assert.equal(te.score, 42 - STARTER_BONUS, '...and unavoidable, so uncharged');
   assert.equal(te.byeWarning, null);
 
-  // Two bodies against two WR slots, both on bye 7: raw 2, avoidable 0.
+  // CHARGED: one WR rostered on bye 7 and the second WR slot still open, candidate
+  // WR also on bye 7. Both starters would be out in week 7 together — actual peak
+  // 2 (2 required, 0 available) against a floor of 1 (byes spread across two weeks
+  // still leaves one slot uncovered in each), so avoidable 1.
+  //
+  // This is the case the feature exists for and the case the summed shortfall
+  // missed: [7,7] and [7,11] BOTH summed to 2, so a stacked pair was
+  // indistinguishable from a spread one and cost nothing. This assertion was
+  // `wr.score === 40 - STARTER_BONUS` with a null badge; reverting Math.max to +=
+  // puts that silence back.
   const oneWr = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
   const wr = scorePlayer({ pos: 'WR', rank: 40, bye: 7 }, oneWr, {});
-  assert.equal(wr.reason, 'FILLS WR');
-  assert.equal(byeShortfall(7, [7], 2), 2);
-  assert.equal(wr.score, 40 - STARTER_BONUS, 'no different WR bye would have helped');
-  assert.equal(wr.byeWarning, null);
+  assert.equal(wr.reason, 'FILLS WR', 'still describes the slot it fills');
+  assert.equal(byeShortfall(7, [7], 2), 2, 'both starters out in week 7');
+  assert.equal(byeShortfall(11, [7], 2), 1, 'spread byes peak one lower');
+  assert.equal(avoidableByeShortfall(7, [7], 2), 1);
+  assert.equal(wr.score, 40 - STARTER_BONUS + BYE_PENALTY, 'a different WR bye would have helped');
+  assert.equal(wr.byeWarning, 'BYE 7 ×1');
+
+  // And the WR who avoids it is charged nothing, on the same open slot.
+  const spread = scorePlayer({ pos: 'WR', rank: 40, bye: 11 }, oneWr, {});
+  assert.equal(spread.score, 40 - STARTER_BONUS);
+  assert.equal(spread.byeWarning, null);
+  assert.ok(spread.score < wr.score, 'so the stacking pick loses to the spreading one');
+});
+
+test('a second starter stacking the first one\'s bye loses to one that spreads it', () => {
+  // THE headline case, and the one the feature was built for: "can't have an
+  // entire position group with the same bye week". It had NO test, which is how it
+  // stayed silent through the whole feature.
+  //
+  // RB1 rostered on bye 9, the RB2 slot still OPEN, two RB candidates a rank apart:
+  // #20 on bye 9 (both starters out together in week 9) and #21 on bye 6 (the byes
+  // spread). Both are 'FILLS RB'.
+  //
+  //   stacker  20 - 12 + 6*1 = 14   badge BYE 9 ×1
+  //   spreader 21 - 12 + 6*0 =  9   no badge
+  //
+  // Under the SUMMED byeShortfall both candidates measured avoidable 0 — [9,9] and
+  // [9,6] both sum to 2 — so the stacker scored 8, was unbadged, and was
+  // recommended OVER the candidate that avoids the clash. Peak separates them:
+  // [9,9] peaks at 2 against a [9,6] floor of 1.
+  const s = rosterState(SPOTS, [{ pos: 'RB', rank: 6, name: 'my RB1', bye: 9 }]);
+  assert.equal(s.openStarters.RB, 1, 'the second RB slot must still be open');
+  assert.equal(s.posSlots.RB, 2);
+  assert.deepEqual(s.posByes.RB, [9]);
+
+  const stacker = { pos: 'RB', rank: 20, name: 'Stacker', bye: 9 };
+  const spreader = { pos: 'RB', rank: 21, name: 'Spreader', bye: 6 };
+
+  assert.equal(byeShortfall(9, [9], 2), 2, 'both RBs out in week 9');
+  assert.equal(byeShortfall(6, [9], 2), 1, 'spread byes peak one lower — the floor');
+  assert.equal(avoidableByeShortfall(9, [9], 2), 1);
+  assert.equal(avoidableByeShortfall(6, [9], 2), 0);
+
+  const stacked = scorePlayer(stacker, s, LIMITS);
+  const spread = scorePlayer(spreader, s, LIMITS);
+  assert.equal(stacked.reason, 'FILLS RB');
+  assert.equal(spread.reason, 'FILLS RB');
+
+  // Charged...
+  assert.equal(stacked.score, 20 - STARTER_BONUS + BYE_PENALTY, 'stacker is charged');
+  assert.equal(stacked.score, 14);
+  assert.equal(spread.score, 21 - STARTER_BONUS, 'spreader is not');
+  assert.equal(spread.score, 9);
+  // ...badged...
+  assert.equal(stacked.byeWarning, 'BYE 9 ×1');
+  assert.equal(spread.byeWarning, null);
+  // ...and demoted below the candidate that avoids the clash, through the real
+  // board sort and not just by score arithmetic.
+  assert.ok(spread.score < stacked.score);
+  const ranked = recommendOrder([stacker, spreader], s, LIMITS);
+  assert.equal(ranked[0].player.name, 'Spreader',
+    'the dashboard must not recommend putting both starting RBs on one bye week');
+  assert.equal(ranked[1].player.name, 'Stacker');
+
+  // And the penalty is what reorders them: with it switched off the stacker's
+  // better rank wins, 8 to 9 — exactly what shipped before this fix.
+  const off = recommendOrder([stacker, spreader], s, LIMITS, { byePenalty: 0 });
+  assert.equal(off[0].player.name, 'Stacker');
+  assert.equal(off[0].score, 8);
 });
 
 test('an empty starting slot outranks bench depth despite an unavoidable bye', () => {
@@ -493,8 +576,10 @@ test('the bye penalty reaches the urgent K/DST FILLS branch too', () => {
   // arm alone left every other test in this suite green, so it needs its own.
   //
   // Hand-built state, for the same reason as the FILLS WR test above: an open
-  // starting slot never coexists with slots-many bodies in a real rosterState,
-  // and without that depth there is no avoidable shortfall to charge on this arm.
+  // starting slot never coexists with slots-many bodies in a real rosterState.
+  // K has exactly ONE slot, so an open K slot means zero Ks rostered and there is
+  // no held bye for a candidate to stack onto — unlike a two-slot position, where
+  // a real state does charge this arm (see the stacking tests below).
   assert.equal(avoidableByeShortfall(7, [7], 1), 1);
   const s = {
     openStarters: { K: 1 }, openFlex: 0, posCounts: {},
@@ -607,10 +692,19 @@ test('doubling up on a bye a different pick would have dodged IS badged', () => 
   assert.equal(r.score, 50 - FLEX_BONUS + BYE_PENALTY, 'and the penalty is charged');
 });
 
-test('two bodies against two slots is unavoidable, so it is not badged', () => {
-  // Table row 4: one WR rostered on bye 7, candidate WR bye 11 -> 2 / 2. Whatever
-  // byes those two hold, two players cannot cover two slots in either bye week.
-  assert.equal(byeShortfall(11, [7], 2), 2);
+test('two bodies on DIFFERENT byes against two slots is unavoidable, so not badged', () => {
+  // Table row 4: one WR rostered on bye 7, candidate WR bye 11 -> peak 1 /
+  // avoidable 0. Two players cannot cover two slots in either bye week, so the
+  // worst week still loses one starter and no other bye on the board fixes it.
+  //
+  // Was 2 / 0 while byeShortfall summed the season: week 7 short one plus week 11
+  // short one. The peak of those two weeks is 1, and the no-such-week floor is 1
+  // too, so the avoidable figure is unchanged — this pick is still silent. What
+  // moved is the STACKED sibling of this fixture (candidate bye 7), which the sum
+  // scored identically at 2 and peak scores 2 against a floor of 1: see 'an open
+  // starting slot is charged only when the pick STACKS a rostered bye'.
+  assert.equal(byeShortfall(11, [7], 2), 1);
+  assert.equal(byeShortfall(7, [7], 2), 2, 'and stacking the SAME bye peaks higher');
   assert.equal(avoidableByeShortfall(11, [7], 2), 0);
   const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
   assert.equal(scorePlayer({ pos: 'WR', rank: 40, bye: 11 }, s, {}).byeWarning, null);
@@ -618,13 +712,13 @@ test('two bodies against two slots is unavoidable, so it is not badged', () => {
 
 test('an unavoidable shortfall is charged to NEITHER the score nor the badge', () => {
   // THE pairing, first direction. Table row 4 again: one WR rostered on bye 7,
-  // candidate WR on bye 11, two WR slots. Raw 2, avoidable 0 — two players
-  // cannot cover two slots in either bye week, whatever byes they hold, so no
-  // other pick on the board would have been better and the pick is charged
-  // nothing. This test replaces 'the score keeps the RAW penalty when the badge
-  // is suppressed', which asserted 40 - 12 + 6*2 = 40 here; a mutant putting the
-  // raw shortfall back into the score scores exactly that 40 instead of 28.
-  assert.equal(byeShortfall(11, [7], 2), 2);
+  // candidate WR on bye 11, two WR slots. Peak 1, avoidable 0 — two bodies cannot
+  // cover two slots in a bye week even when the byes are spread, so the residue is
+  // structural depth and no other pick on the board would have been better.
+  // (Peak 1, not the sum's 2; the avoidable figure is 0 under both.) A mutant
+  // putting the raw shortfall back into the score scores 40 - 12 + 6*1 = 34 here
+  // instead of 28.
+  assert.equal(byeShortfall(11, [7], 2), 1);
   assert.equal(avoidableByeShortfall(11, [7], 2), 0);
   const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
   const r = scorePlayer({ pos: 'WR', rank: 40, bye: 11 }, s, {});

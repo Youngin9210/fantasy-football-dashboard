@@ -65,11 +65,12 @@ const glance = (state) => ({ ...state, settings: { ...state.settings, view: 'gla
 // The Glance card renders exactly three picks (TAKE + two THEN), so the badged
 // candidate has to be inside that top three or there is no line to check.
 //
-// Since the score charges only the AVOIDABLE shortfall, a badged candidate is
-// ALWAYS bench/FLEX depth: an open starting slot at a position means bodies <=
-// slots there, which makes the avoidable shortfall 0 by construction, so nothing
-// filling an open starting slot is ever badged and everything that does outscores
-// the depth pick at a comparable rank. On the stacked scenario the still-open TE
+// The badged candidate in THIS fixture is FLEX depth (a third RB behind two
+// rostered ones), and on this scenario nothing that fills an open starting slot is
+// badged: a pick filling an empty slot is charged only when it stacks a bye its
+// own position already holds, and no candidate here does. It is not a general law
+// — a second starter doubling the first one's bye IS badged, which is the case the
+// whole feature exists for. On the stacked scenario the still-open TE
 // slot put Brock Bowers (#12, 12 - 12 + 0 = 0) ahead of the badged Derrick Henry
 // (#5, 5 - 6 + 6 = 5) and pushed the bye line off the card entirely. Under the
 // previous raw-shortfall score Bowers carried an unavoidable +6 (score 6) and

@@ -69,23 +69,34 @@ const teamSelected = (view) => base({
 
 // ------------------------------------------------------- stacked bye fixture
 //
-// BOARD alone CANNOT render a bye badge, and that is not an accident of the data
-// -- it is structural. avoidableByeShortfall badges only the shortfall a
-// different bye would have avoided, and BOARD's QB byes are all distinct
-// (7/14/10/6) while every other position holds exactly one player. The first
-// player at a position is short in his own bye week whatever he is, and two
-// bodies against two slots are unavoidable however their byes fall, so no
-// candidate anywhere on BOARD has a non-zero avoidable shortfall in any scenario
-// above.
+// BOARD alone CANNOT render a bye badge. avoidableByeShortfall badges only the
+// shortfall a different bye would have avoided, and no candidate on BOARD has one
+// in any scenario above: the first player at a position is short in his own bye
+// week whatever he is, BOARD's QB byes are all distinct (7/14/10/6), and the only
+// scenario that rosters a body a candidate could stack onto (teamSelected drafts
+// Bijan Robinson, RB bye 5) leaves just one other RB on the board -- 'Some Backup',
+// whose bye is null and so can clash with nothing.
+//
+// Note what would badge and does not exist here: a SECOND starter on a bye the
+// position already holds, e.g. an RB on bye 5 available behind that rostered
+// Bijan. That is charged and badged even with the second RB slot open, and it is
+// the case the feature exists for. Adding one to BOARD would change the badge
+// count every scenario expects, hence STACKED_BOARD below.
 //
 // Consequence, measured: screenshot-diff.mjs passed 16/16 at ZERO differing
 // pixels against a pre-feature baseline. The entire bye UI could have been
 // deleted and it would still have passed. This fixture exists so the tool can see
 // the feature at all.
 //
-// The shape that badges needs a THIRD body at a position with two starting slots,
-// on a bye one of the first two already holds: two RBs on byes 7 and 10 rostered,
-// a third RB on bye 7 available. Do not simplify it to two RBs.
+// The shape used here is a THIRD body at a position with two starting slots, on a
+// bye one of the first two already holds: two RBs on byes 7 and 10 rostered, a
+// third RB on bye 7 available. That routes the badged candidate through FLEX
+// depth, which is the branch these harnesses were built around. Cutting it to two
+// RBs (one rostered, one stacking his bye) would also badge -- an open starting
+// slot is charged when the pick stacks a held bye -- but it would put the badged
+// candidate on the FILLS arm at a different score, moving both the badge count and
+// the Glance ordering every check below pins. Change the fixture and re-derive
+// STACKED_BYE with it.
 const STACKED_RBS = [
   { id: 'sr1', rank: 3, tier: 1, name: 'Saquon Barkley', team: 'PHI', pos: 'RB', bye: 7, adp: 3.0 },
   { id: 'sr2', rank: 4, tier: 1, name: 'Jahmyr Gibbs', team: 'DET', pos: 'RB', bye: 10, adp: 4.0 },
