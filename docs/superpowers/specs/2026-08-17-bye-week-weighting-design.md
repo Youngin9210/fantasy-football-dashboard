@@ -65,6 +65,25 @@ prevent it — see "What the peak measures" below. `byeShortfall` answers "in yo
 worst bye week, how many starters at this position can you not field?", not "how
 many starter-weeks do you lose across the season".
 
+**Accepted limitation, recorded rather than fixed: the peak ignores frequency at
+3+ dedicated slots.** The sum's blind spot was shared-vs-spread: at N bodies
+against N slots it could not tell one doubled week from N spread ones, because
+each finite bye costs exactly one either way. The peak fixes that, but trades it
+for a different blind spot at deeper positions: once two DIFFERENT weeks already
+tie for the worst one, a pick that doubles up a THIRD week is charged nothing,
+because the max was already there. Verified: 3 WR slots, rostered byes
+`[5, 5, 9]`, a candidate on bye 9 — peak 1, floor 1, avoidable 0, no badge — and
+it outranks the next fresh-bye WR on pure rank (14 vs 15), identically unbadged.
+The sum missed a shared bye while bodies ≤ slots; the peak misses a second
+concentration once depth exists. Neither measure alone is complete — a complete
+one would take the peak as the primary figure and the sum as a tiebreak between
+candidates that tie on it — but that is more machinery than one line in
+`scorePlayer` justifies for a case that cannot even arise on this owner's
+default roster shape (RB 2, WR 2): with only 2 dedicated slots there is no
+"third week" to hide behind, since two weeks are already all a two-body position
+can produce. Strictly better than `main`, which weighs byes not at all. Left
+as-is.
+
 ### `required` is capped at what is actually rostered
 
 Without `min(startersNeeded, total)` the metric fires constantly early in the
