@@ -652,3 +652,60 @@ table.players tr.limit-divider td {
   border-radius: 4px;
   margin-top: 3px;
 }
+
+/* --- Phone top bar (blocker 2) --- */
+/* .topbar is a nowrap flex row whose inflexible children total ~546px at 390px
+   (.brand 152 nowrap + .sync-status 101 nowrap + .topbar-actions 213 + 3x16
+   gaps + 32 padding). .clock-widget is its only flex:1 child, so it absorbed
+   the whole deficit and computed to 0px wide: both .clock-pill children
+   rendered as blank 26x30 lozenges (24px content box against scrollWidths of
+   238px and 162px -- not even .clock-pill's ellipsis fits), overflowed their
+   zero-width parent, and were overprinted by #syncStatus by 10px and 26px.
+   "N picks until your turn" exists ONLY here, so on a phone the Board simply
+   did not show the most time-critical number in the app. The same overflow put
+   #settingsBtn -- the only route to CSV import and team selection, and the
+   control all six degraded Glance states point at -- at x 478..530, 0% visible.
+
+   Letting the row wrap is the whole fix: .clock-widget takes a full-width line
+   of its own (flex-basis: 100% is what forces the break; without it the pills
+   would merely wrap alongside the buttons and stay narrow) and everything else
+   fits its line. min-width: 0 on .clock-pill keeps its ellipsis reachable if a
+   very long team name still overruns the line, instead of the flex minimum
+   pinning it wide.
+
+   Scoped to a max-width the desktop layout never reaches, and expressed only as
+   overrides of the four properties involved, so the >=561px rendering is
+   byte-identical to before.
+
+   The :empty pair is the cost of the wrap, not decoration: TopBar renders empty
+   <div class="clock-widget"> and <div class="sync-status"> placeholders in the
+   Glance view (they exist to hold the flex column so the buttons do not jump on
+   toggle -- see TopBar.js). Once the row wraps, a full-width empty .clock-widget
+   claims an entire zero-height line plus two 16px row gaps, adding ~32px of dead
+   space to the top of every phone Glance screen. Nothing needs holding open on a
+   line of its own, so an empty one is removed. */
+@media (max-width: 560px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .clock-widget {
+    flex-basis: 100%;
+    /* A full-width row is still not enough for BOTH pills: they need 238px and
+       162px plus a 10px gap = 410px against 358px of content box at 390px, so
+       on one line they shrink to 204px and 140px and .clock-pill's
+       text-overflow: ellipsis eats the end of each -- including the team that
+       is on the clock. Wrapping is adaptive: the pills share a line wherever
+       they fit and take one each only when they do not. */
+    flex-wrap: wrap;
+  }
+
+  .clock-pill {
+    min-width: 0;
+  }
+
+  .clock-widget:empty,
+  .sync-status:empty {
+    display: none;
+  }
+}
