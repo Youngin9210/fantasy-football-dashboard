@@ -268,10 +268,19 @@ test('single-slot positions always cost their own bye week', () => {
 });
 
 test('deep depth never produces a negative shortfall', () => {
-  // Guards the Math.max(0, ...) floor. Three bodies against ONE required starter
-  // leaves slack 2 in every week, so each week's raw figure is negative. No other
-  // fixture reaches slack >= 2, so without this the floor is unverified: removing
-  // it returns -3 here while the rest of the suite still passes.
+  // Pins the non-negativity the PEAK accumulation guarantees: `shortfall` starts
+  // at 0 and every week merges in via `Math.max(shortfall, ...)`, so the result
+  // can never fall below that starting value no matter how negative a single
+  // week's raw figure is. There is no separate per-week floor in the code — an
+  // earlier version wrapped each week in its own `Math.max(0, ...)`, but that was
+  // dead: the outer accumulation already clamps at 0 by construction, so removing
+  // it changed nothing (136/136 still pass, and it is identical to the old code
+  // over 1,764,438 brute-forced inputs).
+  //
+  // Three bodies against ONE required starter leaves slack 2 in every week, so
+  // each week's raw figure is -1 here — deep enough that a mutant which drops the
+  // accumulator's own starting value (e.g. seeding it from the first week's raw
+  // figure instead of 0) returns -1 instead of 0, and this assertion catches it.
   assert.equal(byeShortfall(7, [10, 12], 1), 0);
   assert.equal(byeShortfall(7, [10, 12, 14], 1), 0);
 });

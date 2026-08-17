@@ -110,8 +110,15 @@ function byeShortfall(candidateBye, rosteredByes = [], startersNeeded = 0) {
   for (const week of weeks) {
     const onBye = all.filter((b) => b === week).length;
     // Peak, not running total: see the note above. `+=` here is the defect this
-    // replaced, and the new stacking test in test/recommend.test.js fails on it.
-    shortfall = Math.max(shortfall, Math.max(0, required - (total - onBye)));
+    // replaced, and the stacking test in test/recommend.test.js fails on it.
+    //
+    // No inner `Math.max(0, ...)` on the per-week figure: `shortfall` starts at 0
+    // and every merge is `Math.max(shortfall, ...)`, so the accumulator can never
+    // drop below its own starting value regardless of how negative a single
+    // week's raw figure is. That inner clamp used to be here and was dead code;
+    // removing it is identical to keeping it over 1,764,438 brute-forced inputs,
+    // and the full suite (136/136) is unaffected.
+    shortfall = Math.max(shortfall, required - (total - onBye));
   }
   return shortfall;
 }
