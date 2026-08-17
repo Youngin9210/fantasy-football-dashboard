@@ -608,3 +608,33 @@ table.players tr.limit-divider td {
   border-radius: 4px;
   font-weight: 600;
 }
+
+/* --- Bye-week conflicts (Task 4) --- */
+/* Fixed dark ink, not a token: --status-warning is the same amber in BOTH the
+   :root and :root[data-theme="light"] blocks, so a theme-flipping foreground
+   would fail one of them (--page inverts to near-white, --text-primary to
+   white). Same reasoning as .glance-sync.stale above. */
+.why-badge.bye { background: var(--status-warning); color: #0b0b0b; }
+
+/* Its own line under .glance-pick-why, so the slot reason and the bye caveat
+   read as two separate considerations rather than one run-on sentence.
+   inline-block so it shrinks to the text instead of striping the whole card.
+
+   The amber is the BACKGROUND here, not the foreground. The first version of
+   this rule was `color: var(--status-warning)` with no background, which
+   measured 9.49:1 on the dark card and 1.79:1 on the light one (#fab219 on
+   #fcfcfb) -- illegible in the theme half the users are in, and caught only by
+   measuring both. --status-warning is the SAME amber in both :root blocks, so
+   using it as a background with a fixed dark ink is legible in both by
+   construction: 10.73:1, identical to .why-badge.bye and .glance-sync.stale,
+   which is why this matches their idiom rather than inventing a token. */
+.glance-pick-bye {
+  display: inline-block;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--status-warning);
+  color: #0b0b0b;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-top: 3px;
+}

@@ -50,3 +50,25 @@ export function pickTake(ranked) {
   if (!Array.isArray(ranked)) return null;
   return ranked.find((e) => !e.excluded) || null;
 }
+
+// True when the imported rankings carry no bye weeks at all, so the bye
+// weighting is silently inert. Saying so beats letting a clean board imply byes
+// were considered — confident output from data that is not there is the same
+// failure class as a green sync dot over a dead poll.
+//
+// Two gates, both load-bearing:
+//   - a non-empty roster, so a fresh install is silent;
+//   - ALL of them lacking a bye, because a single synced player without one is a
+//     hole in the data, not an inert feature.
+//
+// Number.isFinite, not truthiness: bye 0 is a real week in this codebase (see
+// byeShortfall's own bye-0 tests), and `!p.bye` would read a rostered bye-0
+// player as missing data and claim the weighting was off when it was running.
+//
+// Lives here rather than inline in GlanceView so that exact distinction is
+// pinned by a unit test — a mutant swapping it for truthiness survived the whole
+// suite while the predicate was a local const.
+export function hasNoByeData(myPlayers) {
+  if (!Array.isArray(myPlayers) || myPlayers.length === 0) return false;
+  return !myPlayers.some((p) => Number.isFinite(p && p.bye));
+}

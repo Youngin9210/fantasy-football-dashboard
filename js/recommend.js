@@ -103,6 +103,28 @@ function byeShortfall(candidateBye, rosteredByes = [], startersNeeded = 0) {
   return shortfall;
 }
 
+// Shortfall a different bye could have avoided. The first player at a position
+// is always short in his own bye week, and every candidate at that position
+// shares that — so it is not a choice and must not be badged. Two bodies against
+// two slots is likewise unavoidable whatever their byes.
+//
+// Measured against a bye nobody holds: whatever shortfall survives THAT is
+// structural (missing depth), not a bye clash the user picked. Only the excess
+// over that floor is something a different pick would have fixed.
+//
+// This drives the UI badge ONLY. The score keeps the RAW byeShortfall: an
+// unavoidable bye still costs you the week, and the raw penalty is uniform
+// across candidates at a position, so it never distorts their ordering. Swapping
+// the score to this value would silently delete the penalty this feature exists
+// to apply.
+const NO_SUCH_WEEK = -1; // finite, so it counts as a real week, but one no player holds
+function avoidableByeShortfall(candidateBye, rosteredByes, startersNeeded) {
+  const actual = byeShortfall(candidateBye, rosteredByes, startersNeeded);
+  if (actual === 0) return 0;
+  const floor = byeShortfall(NO_SUCH_WEEK, rosteredByes, startersNeeded);
+  return Math.max(0, actual - floor);
+}
+
 // Rank of an unranked player: sorts below every ranked one but stays finite so
 // arithmetic and comparisons never produce NaN.
 const UNRANKED = 9999;
@@ -148,17 +170,20 @@ function scorePlayer(player, state, limits = {}, weights = {}) {
     score = rank; reason = 'BENCH';
   }
 
-  const shortfall = byeShortfall(
-    player.bye,
-    (state.posByes || {})[pos],
-    (state.posSlots || {})[pos]
-  );
+  const rosteredByes = (state.posByes || {})[pos];
+  const startersNeeded = (state.posSlots || {})[pos];
+
+  // Two DIFFERENT numbers on purpose, and they must not be collapsed into one.
+  // `shortfall` is what the pick actually costs and drives the score; `avoidable`
+  // is "a different bye would have been better" and drives the badge only.
+  const shortfall = byeShortfall(player.bye, rosteredByes, startersNeeded);
+  const avoidable = avoidableByeShortfall(player.bye, rosteredByes, startersNeeded);
 
   return {
     score: score + byePenalty * shortfall,
     reason,
     excluded: false,
-    byeWarning: shortfall > 0 ? `BYE ${player.bye} ×${shortfall}` : null,
+    byeWarning: avoidable > 0 ? `BYE ${player.bye} ×${avoidable}` : null,
   };
 }
 
@@ -182,6 +207,7 @@ export {
   scorePlayer,
   recommendOrder,
   byeShortfall,
+  avoidableByeShortfall,
   UNRANKED,
   STARTER_BONUS,
   FLEX_BONUS,

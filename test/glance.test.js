@@ -78,3 +78,47 @@ test('pickTake returns null when everything is excluded or the list is empty', (
   assert.equal(pickTake([]), null);
   assert.equal(pickTake(undefined), null);
 });
+
+// --- hasNoByeData ----------------------------------------------------------
+import { hasNoByeData } from '../js/ui/glance.js';
+
+test('a fresh install with nothing rostered is silent', () => {
+  // Otherwise every new user is told the weighting is off before they have a
+  // roster for it to be off ABOUT.
+  assert.equal(hasNoByeData([]), false);
+  assert.equal(hasNoByeData(undefined), false);
+  assert.equal(hasNoByeData(null), false);
+});
+
+test('a roster whose every player lacks a bye reports inert weighting', () => {
+  assert.equal(hasNoByeData([{ bye: null }, { bye: null }]), true);
+  assert.equal(hasNoByeData([{}, {}]), true, 'a CSV with no bye column at all');
+  assert.equal(hasNoByeData([{ bye: undefined }]), true);
+  assert.equal(hasNoByeData([{ bye: NaN }]), true, 'NaN is not bye data');
+});
+
+test('one rostered player WITH a bye is a hole, not an inert feature', () => {
+  // The weighting IS running; that player is simply missing from the CSV. Saying
+  // "bye conflicts are not being weighted" here would be a lie.
+  assert.equal(hasNoByeData([{ bye: 9 }, { bye: null }]), false);
+  assert.equal(hasNoByeData([{ bye: null }, { bye: 9 }]), false);
+});
+
+test('a rostered bye of 0 is real data, not missing data', () => {
+  // Number.isFinite, not truthiness. `!p.bye` reads a bye-0 player as missing
+  // and claims the weighting is off while it is actually running — byeShortfall
+  // treats bye 0 as a real week, so the two must agree. A mutant swapping the
+  // guard for truthiness survives every other assertion in this file.
+  assert.equal(hasNoByeData([{ bye: 0 }]), false);
+  assert.equal(hasNoByeData([{ bye: 0 }, { bye: null }]), false);
+});
+
+test('a non-finite bye is never mistaken for data', () => {
+  assert.equal(hasNoByeData([{ bye: Infinity }]), true);
+  assert.equal(hasNoByeData([{ bye: '7' }]), true, 'an unparsed string is not a week');
+});
+
+test('a null entry in the roster array does not throw', () => {
+  assert.equal(hasNoByeData([null]), true);
+  assert.equal(hasNoByeData([null, { bye: 9 }]), false);
+});

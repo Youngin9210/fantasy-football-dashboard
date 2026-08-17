@@ -2,7 +2,7 @@ import { html, useState, useEffect } from '../vendor/preact.js';
 import { rosterState, recommendOrder } from '../recommend.js';
 import { computeNeeds, assignRosterSlots, nextPickForSlot } from '../draft.js';
 import { useStore } from './useStore.js';
-import { syncFreshness, syncAt, pickTake } from './glance.js';
+import { syncFreshness, syncAt, pickTake, hasNoByeData } from './glance.js';
 
 // A once-a-second re-render heartbeat, nothing more: it exists so the "synced Ns
 // ago" text and the staleness threshold are re-evaluated while the user sits
@@ -71,6 +71,11 @@ function Notice({ sync, children }) {
   return html`<${Card} sync=${sync}><p class="glance-notice">${children}</p><//>`;
 }
 
+// The bye warning gets its OWN element below .glance-pick-why rather than being
+// appended to the reason text: the reason describes which slot this pick fills,
+// and the warning is a separate consideration about the weeks it leaves thin.
+// Rendered verbatim from the scorer (its separator is U+00D7, not the letter x)
+// so the Board's badge and this line can never disagree about the same conflict.
 function Suggestion({ label, entry }) {
   const p = entry.player;
   return html`<div class="glance-pick">
@@ -81,6 +86,7 @@ function Suggestion({ label, entry }) {
       <span class="player-meta">#${p.rank ?? '—'}</span>
     </div>
     <div class="glance-pick-why">${entry.reason}</div>
+    ${entry.byeWarning ? html`<div class="glance-pick-bye">${entry.byeWarning}</div>` : null}
   </div>`;
 }
 
@@ -106,6 +112,13 @@ export function GlanceView({ syncStatus }) {
     .filter((p) => p.drafted && p.draftedByTeamId === settings.myTeamId)
     .sort((a, b) => (a.pickNo || 0) - (b.pickNo || 0));
   const state = rosterState(settings.rosterSpots, mine);
+
+  // A CSV with no bye column yields bye: null for everyone, so the weighting
+  // contributes nothing and the card must say so. Both gates (a non-empty
+  // roster, and ALL of it lacking a bye) plus the Number.isFinite/bye-0
+  // distinction live in glance.js so they are unit-tested rather than trapped in
+  // this component — see hasNoByeData.
+  const noByeData = hasNoByeData(mine);
 
   if (state.picksRemaining === 0) return html`<${Notice} sync=${sync}>Your roster is full.<//>`;
 
@@ -152,6 +165,7 @@ export function GlanceView({ syncStatus }) {
         ? html`STILL NEED${' '}${needKeys.map((k) => html`<span key=${k}><span class="pos-badge ${k}">${k}</span>${' '}</span>`)}`
         : 'All starting spots filled.'}
     </div>
+    ${noByeData ? html`<div class="glance-needs">No bye weeks in your rankings — bye conflicts are not being weighted.</div>` : null}
     ${countdown}
   <//>`;
 }
