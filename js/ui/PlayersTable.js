@@ -35,13 +35,18 @@ function whyClass(reason) {
 }
 
 function PlayerRow({ entry, teams, draftForId, tierStart }) {
-  const { player: p, reason, excluded } = entry;
+  const { player: p, reason, excluded, byeWarning } = entry;
   const teamName = p.draftedByTeamId
     ? (teams.find((t) => t.id === p.draftedByTeamId)?.name || 'Unknown')
     : '';
   const cls = [tierStart ? 'tier-start' : '', p.drafted ? 'drafted' : '', excluded ? 'limit-excluded' : '']
     .filter(Boolean).join(' ');
 
+  // The WHY cell carries up to two badges. The explicit ${' '} between them is
+  // load-bearing: htm drops whitespace-only text nodes, so they would otherwise
+  // render flush against each other. byeWarning is printed verbatim (its
+  // separator is U+00D7, not the letter x) rather than rebuilt here, so the
+  // Board and Glance can never word the same conflict differently.
   return html`<tr class=${cls}>
     <td>${p.rank ?? '—'}${p.tier ? html`<span class="badge-unranked">T${p.tier}</span>` : null}</td>
     <td><span class="player-name">${p.name}</span>${p.source === 'manual' ? html`<span class="badge-unranked">unranked</span>` : null}</td>
@@ -49,7 +54,8 @@ function PlayerRow({ entry, teams, draftForId, tierStart }) {
     <td class="player-meta">${p.team || ''}</td>
     <td class="player-meta">${p.bye ?? ''}</td>
     <td class="player-meta">${p.adp ?? ''}</td>
-    <td>${reason ? html`<span class="why-badge ${whyClass(reason)}">${reason}</span>` : null}</td>
+    <td>${reason ? html`<span class="why-badge ${whyClass(reason)}">${reason}</span>` : null}${
+      byeWarning ? html`${' '}<span class="why-badge bye">${byeWarning}</span>` : null}</td>
     <td class="drafted-by">${p.drafted ? `#${p.pickNo} · ${teamName}` : ''}</td>
     <td>${p.drafted
       ? html`<button class="btn small danger" data-undraft=${p.id} onClick=${() => {

@@ -50,3 +50,44 @@ export function pickTake(ranked) {
   if (!Array.isArray(ranked)) return null;
   return ranked.find((e) => !e.excluded) || null;
 }
+
+// True when the imported rankings carry no bye weeks at all, so the bye
+// weighting is silently inert. Saying so beats letting a clean board imply byes
+// were considered — confident output from data that is not there is the same
+// failure class as a green sync dot over a dead poll.
+//
+// The judgement is about the BOARD, which is what the message claims ("no bye
+// weeks in your rankings"): a non-empty board, none of whose players carries a
+// bye. `myPlayers` is accepted and deliberately not consulted — see below.
+//
+// A ROSTER gate used to sit in front of this, and it was wrong twice over:
+//   - Alone, it made the message a lie. An unmatched Sleeper pick becomes a manual
+//     player with bye: null, so an owner whose roster was entirely unmatched
+//     synced picks — completely ordinary right after his first pick — was told the
+//     weighting was off while it ran normally for every candidate on the board.
+//     Hence the board gate.
+//   - Kept alongside the board gate, it could only add FALSE NEGATIVES, because
+//     GlanceView derives the roster by filtering the board: if no player on the
+//     board has a bye then no rostered player can either, so the roster clause was
+//     already implied. What it did add was silence in the window where the notice
+//     is most useful — import a bye-less CSV, pick your team, and before your first
+//     pick `myPlayers.length === 0` suppressed it, which is exactly when the owner
+//     could still re-export the CSV with a bye column.
+// A fresh install stays silent without it: GlanceView early-returns on an empty
+// `players` before reaching this, and the board gate alone covers the direct call.
+//
+// A missing board is not evidence either. Called without one, this returns false
+// rather than guessing: the claim is about the rankings, and with no rankings in
+// hand there is nothing to claim.
+//
+// Number.isFinite, not truthiness: bye 0 is a real week in this codebase (see
+// byeShortfall's own bye-0 tests), and `!p.bye` would read a bye-0 player as
+// missing data and claim the weighting was off when it was running.
+//
+// Lives here rather than inline in GlanceView so that exact distinction is
+// pinned by a unit test — a mutant swapping it for truthiness survived the whole
+// suite while the predicate was a local const.
+export function hasNoByeData(myPlayers, boardPlayers) {
+  const hasBye = (p) => Number.isFinite(p && p.bye);
+  return Array.isArray(boardPlayers) && boardPlayers.length > 0 && !boardPlayers.some(hasBye);
+}

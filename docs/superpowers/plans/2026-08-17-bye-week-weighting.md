@@ -4,7 +4,14 @@
 
 **Goal:** Penalize a pick that concentrates bye weeks at a position, so a roster never ends up with its starters at one position all out in the same week.
 
-**Architecture:** A pure `byeShortfall()` in `js/recommend.js` measures bye-caused starter shortfall per position. `rosterState` gains the two maps it needs. `scorePlayer` folds `BYE_PENALTY × shortfall` into the score and returns a `byeWarning` the UI renders. No other module's logic changes.
+**Architecture:** A pure `byeShortfall()` in `js/recommend.js` measures the bye-caused starter shortfall per position — the **peak weekly** shortfall, see the marker in Task 1 Step 3. `rosterState` gains the two maps it needs. `scorePlayer` folds `BYE_PENALTY × ` **avoidable** ` shortfall` into the score and returns a `byeWarning` the UI renders from the same number. No other module's logic changes.
+
+> **Read the two markers before re-executing this plan.** Two decisions in it were
+> superseded after review, and both are marked in place where they occur:
+> Task 3 Step 3 charges the score the RAW shortfall (it charges
+> `avoidableByeShortfall`), and Task 1 Step 3 SUMS the shortfall over the season
+> (it takes the weekly PEAK). Both markers point at the shipped code. Copying the
+> unmarked code blocks would reinstall two fixed defects.
 
 **Tech Stack:** Vanilla ES modules, Preact + htm for the UI, no build step, no npm. Tests on Node 22's built-in runner.
 
@@ -19,7 +26,13 @@
 - **In `css/styles.css`, APPEND only.** Existing rules are shared with the Board.
 - **No JSX.** htm tagged templates only. `class=` not `className`. htm drops whitespace-only text nodes (use `${' '}` between adjacent inline elements) and does NOT decode HTML entities (write plain `&`).
 - **`getState()` returns the same object reference every call** — the store mutates in place. No `useMemo`/`useCallback` keyed on store data, no lazy `useState` initializer over store data.
-- **The 85 existing tests must keep passing unmodified.**
+- **The 85 existing tests must keep passing unmodified.** (Held for the feature
+  itself. The later peak-shortfall fix DID change four bye tests, deliberately:
+  they pinned an invariant that was a consequence of the summed shortfall — that a
+  pick filling its own position's empty slot can never be charged or badged — and
+  that invariant is exactly what suppressed the case in the Goal above. Values were
+  recomputed from `score = rank − needBonus + BYE_PENALTY × avoidable`, never
+  weakened.)
 - Commit after every task.
 
 ---
@@ -62,13 +75,13 @@ test('doubling up on an existing bye costs one week', () => {
   assert.equal(byeShortfall(7, [7, 10], 2), 1);
 });
 
-test('both starters sharing a bye costs two weeks', () => {
+test('both starters sharing a bye leaves two starters short in that one week', () => {
   assert.equal(byeShortfall(7, [7], 2), 2);
 });
 
 test('required caps at the slots, not the roster', () => {
-  // Three RBs all on bye 7 against two slots: you lose two starter-weeks, not
-  // three, because you were only ever starting two.
+  // Three RBs all on bye 7 against two slots: your worst week is two starters
+  // short, not three, because you were only ever starting two.
   assert.equal(byeShortfall(7, [7, 7], 2), 2);
 });
 
@@ -122,9 +135,28 @@ const BYE_PENALTY = 6;
 
 And the function, near `rosterState`:
 
+> **SUPERSEDED 2026-08-17 — the accumulation in the code block below.** This
+> version SUMS the per-week shortfall across the season; the shipped
+> `byeShortfall` takes the weekly **maximum**:
+>
+> ```js
+>     shortfall = Math.max(shortfall, Math.max(0, required - (total - onBye)));
+> ```
+>
+> A sum cannot distinguish a shared bye from a spread pair while bodies ≤ slots,
+> because each finite bye then costs exactly one week either way: against two RB
+> slots, byes `[9,9]` and `[9,6]` both sum to 2, so `avoidableByeShortfall`
+> cancelled to 0 and stacking your second starting RB onto your first one's bye
+> was neither charged nor badged — the exact case this plan's Goal names.
+> Detection only began once bodies > slots. Take the shipped code in
+> `js/recommend.js` as authoritative, not the block below. Every expected value in
+> Step 1 above happens to be identical under both measures (peak and sum diverge
+> only across two or more DISTINCT short weeks), so those tests do not catch the
+> difference and are not evidence either way.
+
 ```js
-// How many starter-weeks this pick would leave unfillable at its own position,
-// because of bye overlap.
+// The WORST single week this pick would leave unfillable at its own position,
+// because of bye overlap. (Shipped: the peak, not this block's season sum.)
 //
 // `required` is capped at what is actually rostered. Without that cap the metric
 // fires constantly early in the draft — one RB against two RB slots is "short"
@@ -149,7 +181,7 @@ function byeShortfall(candidateBye, rosteredByes = [], startersNeeded = 0) {
   let shortfall = 0;
   for (const week of weeks) {
     const onBye = all.filter((b) => b === week).length;
-    shortfall += Math.max(0, required - (total - onBye));
+    shortfall += Math.max(0, required - (total - onBye)); // SUPERSEDED -> Math.max, see marker
   }
   return shortfall;
 }
@@ -168,10 +200,11 @@ Expected: all pass — the 85 pre-existing plus the new ones.
 git add js/recommend.js test/recommend.test.js
 git commit -m "Add byeShortfall: bye-caused starter shortfall per position
 
-Measures how many starter-weeks a pick would leave unfillable at its own
-position through bye overlap. required caps at what is actually rostered, so
-it measures bye concentration rather than missing depth — without that cap a
-single RB against two slots reads short in every week."
+Measures how many starters a pick would leave unfillable at its own position in
+the WORST bye week (the peak, not a season sum — a sum cannot tell a shared bye
+from a spread pair). required caps at what is actually rostered, so it measures
+bye concentration rather than missing depth — without that cap a single RB
+against two slots reads short in every week."
 ```
 
 ---
@@ -300,7 +333,7 @@ a position's starters were filled."
 
 **Interfaces:**
 - Consumes: `byeShortfall`, `BYE_PENALTY`, `state.posByes`, `state.posSlots`.
-- Produces: `scorePlayer` return value gains `byeWarning: string|null`; `score` includes `BYE_PENALTY × shortfall`; `weights.byePenalty` overrides the constant. Tasks 4 and 5 consume all three.
+- Produces: `scorePlayer` return value gains `byeWarning: string|null`; `score` includes `BYE_PENALTY × avoidableByeShortfall` (shipped; this task's own code block charges the raw shortfall — see its marker); `weights.byePenalty` overrides the constant. Tasks 4 and 5 consume all three.
 
 **The structural risk in this task.** `scorePlayer` currently has FIVE return points:
 the position-limit exclusion, urgent K/DST, `FILLS <POS>`, `FILLS FLEX`, and
@@ -335,9 +368,14 @@ test('the bye penalty reaches the FILLS branch, not only BENCH', () => {
   // The regression this guards: applying the penalty at one return site and
   // forgetting the other three.
   //
-  // In the FILLS branch a position's slots are by definition not yet full, so
-  // total <= slots and EVERY bye causes a shortfall — there is no clean-FILLS
-  // fixture to compare against. Isolate the penalty with byePenalty: 0 instead.
+  // SUPERSEDED ARITHMETIC — `BYE_PENALTY * 2` below assumes the score charges the
+  // RAW, SUMMED shortfall. Shipped, the charge is BYE_PENALTY * 1: the score uses
+  // avoidableByeShortfall, and the peak measure makes this fixture (one WR on
+  // bye 7, candidate WR on bye 7, two WR slots) actual 2 against a floor of 1.
+  // The fixture itself is right and is exactly the headline case — a second
+  // starter stacking the first one's bye IS charged even with the slot open. See
+  // test/recommend.test.js, 'an open starting slot is charged only when the pick
+  // STACKS a rostered bye'.
   const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
   const p = { pos: 'WR', rank: 40, bye: 7 };
   const withPenalty = scorePlayer(p, s, {}, {});
@@ -345,7 +383,7 @@ test('the bye penalty reaches the FILLS branch, not only BENCH', () => {
   assert.equal(withPenalty.reason, 'FILLS WR');
   assert.equal(without.score, 40 - STARTER_BONUS);
   assert.equal(withPenalty.score - without.score, BYE_PENALTY * 2,
-    'two players for two slots means both bye weeks are short');
+    'two players for two slots means both bye weeks are short'); // shipped: * 1
 });
 
 test('the bye penalty reaches the FLEX branch', () => {
@@ -357,11 +395,17 @@ test('the bye penalty reaches the FLEX branch', () => {
 });
 
 test('the bye penalty reaches the K/DST WAIT branch', () => {
+  // SUPERSEDED FIXTURE — a LONE K is charged nothing, because his own bye week is
+  // unavoidable: every K on the board is short in his. The shipped test rosters a
+  // first K on bye 7 and scores a SECOND K on bye 7 behind him, which is avoidable
+  // 1 and does reach this arm. See test/recommend.test.js, 'the bye penalty
+  // reaches the K/DST WAIT branch' and 'a lone K is quiet in BOTH the score and
+  // the badge'.
   const s = rosterState(SPOTS, []);
   const k = scorePlayer({ pos: 'K', rank: 150, bye: 7 }, s, {});
   assert.equal(k.reason, 'WAIT');
   // One slot, one body: its own bye is always a shortfall of 1.
-  assert.equal(k.score, 150 + KDEF_PENALTY + BYE_PENALTY);
+  assert.equal(k.score, 150 + KDEF_PENALTY + BYE_PENALTY); // shipped: no penalty
 });
 
 test('byeWarning names the week and count, and is null when covered', () => {
@@ -389,10 +433,14 @@ test('an excluded player gets no bye commentary and stays Infinity', () => {
 });
 
 test('weights.byePenalty overrides the constant', () => {
+  // SUPERSEDED ARITHMETIC — `30 * 2` is the raw summed count again. The injected
+  // weight multiplies the AVOIDABLE count, which is 1 on this fixture, so the gap
+  // is 30. The shipped test says so in its name: 'weights.byePenalty overrides the
+  // constant, and scales the AVOIDABLE count'.
   const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
   const p = { pos: 'WR', rank: 40, bye: 7 };
   const base = scorePlayer(p, s, {}, { byePenalty: 0 }).score;
-  assert.equal(scorePlayer(p, s, {}, { byePenalty: 30 }).score - base, 30 * 2);
+  assert.equal(scorePlayer(p, s, {}, { byePenalty: 30 }).score - base, 30 * 2); // shipped: 30 * 1
 });
 
 test('a player with no bye data is never penalized', () => {
@@ -412,6 +460,29 @@ Expected: FAIL — `byeWarning` is `undefined` and scores lack the penalty.
 
 Keep the exclusion early return exactly as it is. Convert the other four returns
 to assignments, then apply the penalty once:
+
+> **SUPERSEDED 2026-08-17 — the last two statements of the code block below.**
+> `score` and `byeWarning` are both built from the RAW `byeShortfall` here. Shipped,
+> BOTH read `avoidableByeShortfall`, from ONE local so they can never disagree:
+>
+> ```js
+>   const avoidable = avoidableByeShortfall(player.bye, rosteredByes, startersNeeded);
+>
+>   return {
+>     score: score + byePenalty * avoidable,
+>     reason,
+>     excluded: false,
+>     byeWarning: avoidable > 0 ? `BYE ${player.bye} ×${avoidable}` : null,
+>   };
+> ```
+>
+> Charging the raw shortfall taxes a pick for a week no candidate at its position
+> could have covered, which demoted the first TE — filling an EMPTY STARTING SLOT —
+> below third-RB FLEX depth. See Task 4 Step 0's own marker, and
+> `js/recommend.js`, which is authoritative. The comment in the block below also
+> says "four return sites"; there are FIVE (urgent K/DST FILLS is its own arm), and
+> a mutant zeroing the penalty on the fifth passed the whole suite until a test was
+> added for it.
 
 ```js
 function scorePlayer(player, state, limits = {}, weights = {}) {
@@ -447,6 +518,7 @@ function scorePlayer(player, state, limits = {}, weights = {}) {
     score = rank; reason = 'BENCH';
   }
 
+  // SUPERSEDED: shipped code reads avoidableByeShortfall here -- see marker above.
   const shortfall = byeShortfall(
     player.bye,
     (state.posByes || {})[pos],
@@ -493,6 +565,73 @@ byeWarning for the UI and weights.byePenalty for calibration."
 - Consumes: `byeWarning` from each `recommendOrder` entry.
 - Produces: no exports.
 
+- [ ] **Step 0: Badge only an AVOIDABLE shortfall**
+
+Found in Task 3's review, and verified: on an empty roster **8 of 8 candidates**
+carry a non-null `byeWarning`, because the first player at any position is always
+short in his own bye week. Badging all of them is noise, and a warning that
+always fires teaches the user to ignore it — the same failure this project
+already had to design around for the amber sync banner.
+
+A shortfall is only worth showing when a *different bye* would have reduced it.
+That is computable by comparing against a bye nobody holds:
+
+```js
+// In js/recommend.js, exported alongside the others.
+//
+// Shortfall a different bye could have avoided. The first player at a position
+// is always short in his own bye week, and every candidate at that position
+// shares that — so it is not a choice and must not be badged. Two bodies against
+// two slots is likewise unavoidable whatever their byes.
+const NO_SUCH_WEEK = -1; // finite, so it counts as a real week, but one no player holds
+function avoidableByeShortfall(candidateBye, rosteredByes, startersNeeded) {
+  const actual = byeShortfall(candidateBye, rosteredByes, startersNeeded);
+  if (actual === 0) return 0;
+  const floor = byeShortfall(NO_SUCH_WEEK, rosteredByes, startersNeeded);
+  return Math.max(0, actual - floor);
+}
+```
+
+`scorePlayer` sets `byeWarning` from **`avoidableByeShortfall`**, while `score`
+keeps using the raw `byeShortfall`. That split is deliberate: the penalty is what
+the pick actually costs you, which is true even when unavoidable; the badge is
+"you could have done better here", which is only true sometimes. The raw penalty
+is uniform across candidates at a position, so it never distorts their ordering.
+
+> **SUPERSEDED 2026-08-17 — the two paragraphs above and the pairing test they
+> ask for below.** The uniformity argument holds *within* a position and fails
+> *across* positions: `tools/calibrate-bye.mjs` showed the first TE, filling an
+> empty STARTING slot, demoted below third-RB FLEX depth by a shortfall no TE
+> candidate could avoid. The score now uses `avoidableByeShortfall` too, so score
+> and badge read the same measure, and the pairing tests pin THAT instead. See
+> "Revised 2026-08-17" in
+> `docs/superpowers/specs/2026-08-17-bye-week-weighting-design.md`.
+
+Verified behavior, with the shipped **peak** `byeShortfall`. Under the season sum
+the fourth row measured `2 / 2` and the fifth row measured `2 / 2` as well — the
+sum could not tell a stacked pair from a spread one, so the fifth row was
+indistinguishable from the fourth, was never badged, and was never even written
+down. That is how the case the feature was asked for stayed silent:
+
+| Rostered at position (2 slots) | Candidate | actual / floor | Badge |
+| --- | --- | --- | --- |
+| none | RB bye 7 | 1 / 1 | no |
+| bye 7, bye 10 | RB bye 12 | 0 / 0 | no |
+| bye 7, bye 10 | RB bye 7 | 1 / 0 | **yes** |
+| bye 7 | WR bye 11 | 1 / 1 | no |
+| bye 7 | WR bye 7 (2nd slot still OPEN) | 2 / 1 | **yes** |
+
+Add tests for each row, plus one asserting that when the badge is suppressed the
+`score` is **not charged either** — score and badge read the same
+`avoidableByeShortfall`, so an unavoidable shortfall costs nothing anywhere. (This
+instruction previously demanded the opposite: that `score` still carry the RAW
+penalty under a suppressed badge. That pairing is what demoted the first TE below
+FLEX depth; see the marker above and the shipped test 'an unavoidable shortfall is
+charged to NEITHER the score nor the badge'.) The fifth row needs a test of its
+own asserting the charge, the badge, AND that it ranks below an equivalent
+candidate who spreads the bye — it is the case the whole feature exists for and
+it had no test at all.
+
 - [ ] **Step 1: Board — a second badge in the WHY column**
 
 In `js/ui/PlayersTable.js`, `PlayerRow` destructures `{ player: p, reason, excluded }`.
@@ -522,7 +661,25 @@ From the spec: a CSV with no bye column makes the weighting silently inert, whic
 is the same failure class as the sync dot — confident output from data that is not
 there. In `js/ui/GlanceView.js`, after `mine` is computed:
 
+> **SUPERSEDED 2026-08-17 — the predicate below gates on the ROSTER.** Shipped, it
+> is `hasNoByeData(mine, players)` in `js/ui/glance.js`, and it judges the BOARD:
+>
+> ```js
+>   return Array.isArray(boardPlayers) && boardPlayers.length > 0 && !boardPlayers.some(hasBye);
+> ```
+>
+> Two defects in the roster version. It made the message ("No bye weeks in your
+> rankings") a lie for a roster of unmatched Sleeper picks, which all carry
+> `bye: null` while the board is full of byes and the weighting runs normally. And
+> `mine.length > 0` silenced the notice before the owner's first pick — the one
+> window in which he could still re-export the CSV with a bye column. The roster is
+> a subset of the board, so a roster clause adds only false negatives. A fresh
+> install stays silent because `GlanceView` early-returns on an empty `players`.
+> The predicate also lives in `glance.js`, not inline here, so the bye-0 /
+> `Number.isFinite` distinction is unit-tested.
+
 ```js
+  // SUPERSEDED, see marker above -- the shipped gate is on the board, not the roster.
   // A CSV with no bye column yields bye: null for everyone, so the weighting
   // contributes nothing. Say so rather than letting a clean board imply byes
   // were considered. Gated on having rostered players, so a fresh install is
@@ -619,12 +776,41 @@ which name is present). Requirements:
   the scoring — a calibration that drifts from the shipped scorer tells you
   about a program you are not running. This is why `weights.byePenalty` exists.
 
+- [ ] **Step 1b: Make the FLEX_BONUS interaction visible**
+
+Found during Task 4's fixes and verified: `FLEX_BONUS` and `BYE_PENALTY` are both
+**6**, so one shortfall week *exactly* erases the FLEX bonus. A FLEX-filling
+candidate with a bye conflict scores its raw rank — identical to bench depth at
+the same rank:
+
+```
+2 RBs rostered on byes 7 and 10 (RB slots full, FLEX open), candidate RB rank 40:
+  bye 14 (fresh)     -> 34   FILLS FLEX
+  bye 7  (conflict)  -> 40   FILLS FLEX   BYE 7 ×1     <- the -6 is fully cancelled
+```
+
+That is an accident of two independently chosen constants, not a decision, and it
+has a visible consequence: a badged FLEX candidate can never outscore a
+better-ranked unbadged one, so the badge tends to land on a backup suggestion
+rather than the headline pick.
+
+The calibration must make this legible rather than bury it. Include in the board a
+FLEX-eligible candidate with a bye conflict alongside an equal-rank one without,
+and print each row's `reason` and `byeWarning` next to the score so the
+cancellation is readable at `byePenalty` 6 and visibly not at 3 or 12.
+
+Add a line to the output naming the relationship explicitly — something like
+`note: byePenalty 6 == FLEX_BONUS 6, so one shortfall week cancels the FLEX bonus
+exactly`. The owner is choosing a weight; this interaction is part of what they
+are choosing and should not have to be rediscovered.
+
 - [ ] **Step 2: Run it and sanity-check by hand**
 
 Run: `node tools/calibrate-bye.mjs`
 
 Confirm by hand for at least two rows that the printed score equals
-`rank − needBonus + byePenalty × shortfall`. If it does not, the wiring is wrong,
+`rank − needBonus + byePenalty × AVOIDABLE shortfall` (the avoidable count is what
+the row's `BYE n ×k` badge prints, so read k off the badge). If it does not, the wiring is wrong,
 not the script — report it.
 
 - [ ] **Step 3: Confirm the suite ignores it**

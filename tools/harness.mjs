@@ -36,7 +36,7 @@ const BOARD = [
   { id: 'p10', rank: null, name: 'Some Backup', team: 'NYJ', pos: 'RB', bye: null, adp: null, source: 'manual' },
 ];
 
-const draft = (id, teamId, pickNo) => ({ ...BOARD.find((p) => p.id === id), drafted: true, draftedByTeamId: teamId, pickNo });
+const draft = (id, teamId, pickNo, from = BOARD) => ({ ...from.find((p) => p.id === id), drafted: true, draftedByTeamId: teamId, pickNo });
 const base = (over = {}) => ({
   // view is seeded EXPLICITLY. settings.view defaults to 'glance' in the app, so
   // a scenario that leaves it out renders the Glance card -- which meant every
@@ -66,6 +66,57 @@ const teamSelected = (view) => base({
   picks: [{ pickNo: 1, round: 1, teamId: 't0', playerId: 'p2', rawName: 'Bijan Robinson' }],
   pickCounter: 1,
 });
+
+// ------------------------------------------------------- stacked bye fixture
+//
+// BOARD alone CANNOT render a bye badge. avoidableByeShortfall badges only the
+// shortfall a different bye would have avoided, and no candidate on BOARD has one
+// in any scenario above: the first player at a position is short in his own bye
+// week whatever he is, BOARD's QB byes are all distinct (7/14/10/6), and the only
+// scenario that rosters a body a candidate could stack onto (teamSelected drafts
+// Bijan Robinson, RB bye 5) leaves just one other RB on the board -- 'Some Backup',
+// whose bye is null and so can clash with nothing.
+//
+// Note what would badge and does not exist here: a SECOND starter on a bye the
+// position already holds, e.g. an RB on bye 5 available behind that rostered
+// Bijan. That is charged and badged even with the second RB slot open, and it is
+// the case the feature exists for. Adding one to BOARD would change the badge
+// count every scenario expects, hence STACKED_BOARD below.
+//
+// Consequence, measured: screenshot-diff.mjs passed 16/16 at ZERO differing
+// pixels against a pre-feature baseline. The entire bye UI could have been
+// deleted and it would still have passed. This fixture exists so the tool can see
+// the feature at all.
+//
+// The shape used here is a THIRD body at a position with two starting slots, on a
+// bye one of the first two already holds: two RBs on byes 7 and 10 rostered, a
+// third RB on bye 7 available. That routes the badged candidate through FLEX
+// depth, which is the branch these harnesses were built around. Cutting it to two
+// RBs (one rostered, one stacking his bye) would also badge -- an open starting
+// slot is charged when the pick stacks a held bye -- but it would put the badged
+// candidate on the FILLS arm at a different score, moving both the badge count and
+// the Glance ordering every check below pins. Change the fixture and re-derive
+// STACKED_BYE with it.
+const STACKED_RBS = [
+  { id: 'sr1', rank: 3, tier: 1, name: 'Saquon Barkley', team: 'PHI', pos: 'RB', bye: 7, adp: 3.0 },
+  { id: 'sr2', rank: 4, tier: 1, name: 'Jahmyr Gibbs', team: 'DET', pos: 'RB', bye: 10, adp: 4.0 },
+  { id: 'sr3', rank: 5, tier: 1, name: 'Derrick Henry', team: 'BAL', pos: 'RB', bye: 7, adp: 5.0 },
+];
+const STACKED_BOARD = [...BOARD, ...STACKED_RBS];
+// sr1 and sr2 are MINE; sr3 stays on the board as the badged candidate.
+const STACKED_MINE = { sr1: 1, sr2: 2 };
+
+// What this fixture is FOR, exported so tools/bye-ui-check.mjs asserts against the
+// facts it was built to produce instead of keeping a second copy of the
+// arithmetic that could drift out of agreement with it. Both numbers are pinned by
+// unit tests on avoidableByeShortfall (see test/recommend.test.js): a third RB on
+// bye 7 behind byes 7 and 10 against two RB slots is avoidable 1; bye 5 is 0.
+export const STACKED_BYE = {
+  scenario: 'stacked bye, team selected',
+  badged: { name: 'Derrick Henry', badge: 'BYE 7 ×1' },
+  unbadged: { name: 'Bijan Robinson' },
+  expectedBadges: 1, // exactly one badged candidate on the whole board
+};
 
 // Every scenario declares the `view` it is describing, and a harness must prove
 // the page actually rendered that view before comparing anything -- see
@@ -110,6 +161,19 @@ export const SCENARIOS = [
       players: BOARD.map((p, i) => (i < 5 ? draft(p.id, 't0', i + 1) : p)),
       pickCounter: 5 }) },
   { name: 'empty rankings', expectRows: false, view: 'board', state: base({ players: [] }) },
+  // The only scenario in which a bye badge renders at all -- see STACKED_BYE.
+  // Against a baseline predating the bye UI this scenario MUST report a
+  // difference; if it ever reports 0 differing pixels, either the fixture stopped
+  // producing an avoidable shortfall or the badge stopped rendering.
+  { name: STACKED_BYE.scenario, expectRows: true, view: 'board', state: base({
+      settings: { sortMode: 'need', myTeamId: 't0' },
+      players: STACKED_BOARD.map((p) => (STACKED_MINE[p.id]
+        ? draft(p.id, 't0', STACKED_MINE[p.id], STACKED_BOARD) : p)),
+      picks: Object.entries(STACKED_MINE).map(([playerId, pickNo]) => ({
+        pickNo, round: 1, teamId: 't0', playerId,
+        rawName: STACKED_BOARD.find((p) => p.id === playerId).name,
+      })),
+      pickCounter: 2 }) },
 ];
 
 export const STORAGE_KEY = 'ffDraftState.v1';
