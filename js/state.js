@@ -13,6 +13,7 @@ function defaultState() {
       rosterSpots: DEFAULT_ROSTER.slice(),
       positionLimits: {}, // {POS: max}; empty means no limits
       sortMode: 'rank', // 'rank' | 'need'
+      view: 'glance', // 'glance' | 'board'
       scoringNotes: 'Half-PPR (0.5/rec), 6pt passing TD, -3 INT',
       sleeperLeagueId: '',
       sleeperDraftId: '',
