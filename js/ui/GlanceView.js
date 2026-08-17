@@ -1,23 +1,13 @@
-import { html, useState, useEffect } from '../vendor/preact.js';
+import { html } from '../vendor/preact.js';
 import { rosterState, recommendOrder } from '../recommend.js';
 import { computeNeeds, assignRosterSlots, nextPickForSlot } from '../draft.js';
 import { useStore } from './useStore.js';
+import { useHeartbeat } from './useHeartbeat.js';
 import { syncFreshness, syncAt, pickTake, hasNoByeData } from './glance.js';
 
-// A once-a-second re-render heartbeat, nothing more: it exists so the "synced Ns
-// ago" text and the staleness threshold are re-evaluated while the user sits
-// still. Its stored value is deliberately NOT used as the clock — freshness is
-// judged against a Date.now() read during render, because a sampled `now` is up
-// to a second behind by construction and syncFreshness now treats a future
-// timestamp as skew. Cleared on unmount so the interval cannot outlive the view.
-function useHeartbeat(active) {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    if (!active) return undefined;
-    const h = setInterval(() => setTick((n) => n + 1), 1000);
-    return () => clearInterval(h);
-  }, [active]);
-}
+// useHeartbeat used to be a private function here. It moved to ./useHeartbeat.js
+// unchanged when TopBar's SyncStatus started needing the same thing; see that
+// file for why its tick value must never be used as the clock.
 
 function ago(ms) {
   const s = Math.max(0, Math.round(ms / 1000));

@@ -723,3 +723,26 @@ table.players tr.limit-divider td {
     display: none;
   }
 }
+
+/* --- Board sync dot: stale state (blocker 4) --- */
+/* The top bar's counterpart to .glance-sync.stale, and deliberately the same
+   idiom: amber background, fixed dark ink. --status-warning is the SAME amber in
+   both the :root and :root[data-theme="light"] blocks, so a theme-flipping
+   foreground would fail one of them (--page inverts to near-white, --text-primary
+   to white) -- exactly the trap .glance-sync.stale and .why-badge.bye already
+   document. Measured 10.73:1 in both themes, matching them.
+
+   .sync-status's own `color: var(--text-muted)` has to be overridden here or the
+   warning would render 3.4:1 grey on amber. Everything else about the element --
+   12px, flex, nowrap -- is inherited unchanged, so this is a paint change that
+   moves nothing.
+
+   Narrower than the Glance banner on purpose: no bottom margin (it is a flex
+   child of a row, not a block in a card) and no border-radius growth. */
+.sync-status.stale {
+  color: #0b0b0b;
+  background: var(--status-warning);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
