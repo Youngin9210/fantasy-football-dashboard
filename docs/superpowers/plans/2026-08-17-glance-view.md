@@ -243,8 +243,12 @@ export function GlanceView({ syncStatus }) {
   let countdown = null;
   if (myTeam) {
     const nextPickNo = pickCounter + 1;
-    const until = nextPickForSlot(nextPickNo, myTeam.slot, settings.numTeams) - nextPickNo;
-    countdown = until === 0
+    // nextPickForSlot returns null when the slot falls outside numTeams (a stale
+    // saved roster, a shrunk league). `null - n` is -n, NOT NaN, so an unguarded
+    // subtraction renders a plausible-looking negative countdown.
+    const next = nextPickForSlot(nextPickNo, myTeam.slot, settings.numTeams);
+    const until = Number.isFinite(next) ? next - nextPickNo : null;
+    countdown = until === null ? null : until === 0
       ? html`<div class="glance-turn my-turn">YOU'RE UP</div>`
       : html`<div class="glance-turn">${until} pick${until === 1 ? '' : 's'} until your turn</div>`;
   }
@@ -314,6 +318,17 @@ Do not edit existing rules. Append:
   font-size: 12px;
   color: var(--text-secondary);
 }
+/* .pos-badge sets color:#fff but only backgrounds the six real positions, so a
+   FLEX slot (in the DEFAULT roster) or an IDP label from a custom CSV (LB, DL,
+   DB) renders white-on-card and is invisible in light mode. Excluding the six
+   real positions means those elements never match this rule, so their own
+   colours still win. Scoped to .glance-card so the board's .needs-row and
+   player table keep their existing behaviour untouched. */
+.glance-card .pos-badge:where(:not(.QB):not(.RB):not(.WR):not(.TE):not(.K):not(.DST):not(.DEF)) {
+  background: var(--baseline);
+  color: var(--text-primary);
+}
+
 .glance-turn { margin-top: 10px; font-size: 13px; color: var(--text-secondary); }
 .glance-turn.my-turn { color: var(--status-good); font-weight: 700; }
 
@@ -468,6 +483,37 @@ existing `sort-toggle` idiom so it inherits the active-button styling:
 ```
 
 This requires `import * as St from '../state.js';` at the top of `TopBar.js`.
+
+- [ ] **Step 5b: Fix the same negative countdown in the clock widget**
+
+Found in Task 2's review. `js/ui/TopBar.js` contains the identical unguarded
+subtraction the Glance card was just fixed for:
+
+```js
+    const picksUntil = nextPickForSlot(nextPickNo, myTeam.slot, settings.numTeams) - nextPickNo;
+```
+
+`nextPickForSlot` returns `null` when the slot falls outside `numTeams` — a
+stale saved roster, or a league that shrank — and `null - n` is `-n`, not `NaN`.
+So the board's clock renders "-2 picks until your turn" with full confidence.
+This is live on `main` today.
+
+Guard it the same way, and render no turn pill at all when the countdown is
+unavailable rather than a wrong one:
+
+```js
+    const next = nextPickForSlot(nextPickNo, myTeam.slot, settings.numTeams);
+    const picksUntil = Number.isFinite(next) ? next - nextPickNo : null;
+    if (picksUntil !== null) {
+      turnPill = picksUntil === 0
+        ? html`<span class="clock-pill my-turn">YOU'RE UP</span>`
+        : html`<span class="clock-pill">${picksUntil} pick${picksUntil === 1 ? '' : 's'} until your turn</span>`;
+    }
+```
+
+Verify in a browser: set `numTeams` to 4 while a team's saved `slot` is 9, and
+confirm the header shows the pick/round pill with no turn pill, rather than a
+negative number.
 
 - [ ] **Step 6: Route the views in `js/ui/App.js`**
 
@@ -703,6 +749,24 @@ against the real 20s value, not a shortened test-only one."
 - Modify: `README.md`
 
 **Interfaces:** none.
+
+- [ ] **Step 0: Seed a view in the shared scenarios — the harness is currently dead**
+
+Found in Task 3's review. `base()` in `tools/harness.mjs` seeds no `view`, so on
+this branch every scenario loads in **Glance** and gets compared against a
+baseline rendering the **Board**. The tool reports enormous differences for a
+reason unrelated to any regression, which turns the repo's only pixel-level
+guard on the Board into noise nobody will investigate rather than a failing
+signal.
+
+Add `view: 'board'` to `base()` in `tools/harness.mjs` so the existing scenarios
+keep guarding the Board. The null-state "fresh install" scenario has no state to
+seed, so have the prep source click the Board button through the UI for that one
+— `ENSURE_SETUP_OPEN_SOURCE` already demonstrates the pattern.
+
+Then add a Glance scenario (rankings, a selected team, `view: 'glance'`) so the
+new default view is covered too. Without it the view users actually land on is
+the one thing the harness never looks at.
 
 - [ ] **Step 1: Repoint the screenshot baseline**
 

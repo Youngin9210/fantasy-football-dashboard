@@ -543,3 +543,68 @@ table.players tr.limit-divider td {
   color: var(--text-muted);
   border-top: 2px solid var(--baseline);
 }
+
+/* --- Glance view --- */
+.glance-card {
+  max-width: 560px;
+  margin: 24px auto;
+  padding: 20px;
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.glance-notice { color: var(--text-secondary); margin: 0; }
+
+.glance-pick { padding: 10px 0; }
+.glance-pick-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.glance-pick-name { font-size: 22px; font-weight: 600; margin: 2px 0; }
+.glance-pick-why { font-size: 13px; color: var(--text-secondary); }
+
+.glance-then { border-top: 1px solid var(--gridline); margin-top: 8px; }
+.glance-then .glance-pick-name { font-size: 16px; }
+
+.glance-needs {
+  border-top: 1px solid var(--gridline);
+  margin-top: 12px;
+  padding-top: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+/* .pos-badge sets color:#fff but only backgrounds the six real positions, so a
+   FLEX slot, an IDP label (LB/DL/DB) out of an IDP CSV, or any custom roster
+   label the user types in Setup would be white text on a transparent
+   background over a near-white card — measured at 1.03:1. Invisible.
+   Scoped to the whole .glance-card, not just .glance-needs: the TAKE and THEN
+   lines badge p.pos too, and the original .glance-needs scope left them
+   unreadable. :where() keeps the selector at zero specificity so the
+   per-position colours still win, and .glance-card exists only in the Glance
+   view, so the board's own .needs-row badges are untouched. */
+.glance-card .pos-badge:where(:not(.QB):not(.RB):not(.WR):not(.TE):not(.DST):not(.DEF):not(.K)) {
+  background: var(--baseline);
+  color: var(--text-primary);
+}
+.glance-turn { margin-top: 10px; font-size: 13px; color: var(--text-secondary); }
+.glance-turn.my-turn { color: var(--status-good); font-weight: 700; }
+
+.glance-sync {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.glance-sync.stale {
+  /* Fixed dark ink, not a token: --status-warning is the same amber in both
+     themes, so a theme-flipping foreground would fail one of them. */
+  color: #0b0b0b;
+  background: var(--status-warning);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}

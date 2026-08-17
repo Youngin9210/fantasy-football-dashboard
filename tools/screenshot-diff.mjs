@@ -1,13 +1,18 @@
-// Pixel-level proof that the Preact rewrite LOOKS the same as the vanilla build.
+// Pixel-level drift detector for the UI.
 //
-// A companion DOM-structure harness (tools/dom-diff.mjs, since retired) proved
-// structure, attributes and text matched during the Preact port. It
-// deliberately normalizes whitespace between inline elements, so a spacing or
-// color regression that never touches the DOM would slip past it. This tool
-// closes that gap: it serves this working tree and a git worktree of the
-// pre-rewrite commit on two ports, loads both in headless Chrome with identical
-// seeded localStorage and an identical 1440x900 viewport, takes full-page
-// screenshots in BOTH themes, and diffs them pixel by pixel.
+// It serves this working tree and a git worktree of a baseline ref on two ports,
+// loads both in headless Chrome with identical seeded localStorage and an
+// identical 1440x900 viewport, takes full-page screenshots of every scenario in
+// BOTH themes, and diffs them pixel by pixel -- reporting not just how many
+// pixels changed but which element boxes moved.
+//
+// The baseline was originally the pre-rewrite commit 998d3ad, when the job was
+// proving the Preact port looked like the vanilla build. That port is done and
+// that commit contains none of today's DOM, so the baseline now defaults to HEAD:
+// a run answers "did my uncommitted UI edits move anything I did not intend to
+// move?". Point it anywhere with --ref/SCREENSHOT_DIFF_REF to compare across
+// commits. When the baseline resolves to a tree identical to the working tree,
+// the run says so out loud rather than letting a wall of 0.0000% read as proof.
 //
 // No dependencies. The static server, chrome-headless-shell launch, CDP client
 // and seeded scenarios live in tools/harness.mjs; PNG
@@ -16,13 +21,14 @@
 //
 // Usage: node tools/screenshot-diff.mjs [--verbose] [--no-self-test]
 //                                       [--keep-passing] [--ref <commit>]
+//        SCREENSHOT_DIFF_REF=<commit> node tools/screenshot-diff.mjs
 import { execSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  SCENARIOS, STORAGE_KEY, THEME_KEY, ENSURE_SETUP_OPEN_SOURCE,
+  SCENARIOS, STORAGE_KEY, THEME_KEY, ENSURE_SETUP_OPEN_SOURCE, ENSURE_VIEW_SOURCE,
   serve, launchChrome, Page,
 } from './harness.mjs';
 import { decodePng, encodePng } from './png.mjs';
@@ -33,7 +39,27 @@ const argv = process.argv.slice(2);
 const VERBOSE = argv.includes('--verbose');
 const SELF_TEST = !argv.includes('--no-self-test');
 const KEEP_PASSING = argv.includes('--keep-passing');
-const OLD_REF = argv.includes('--ref') ? argv[argv.indexOf('--ref') + 1] : '998d3ad';
+// --ref beats the environment beats the default. HEAD means "the last commit",
+// so an ordinary run diffs the working tree against it.
+const BASE_REF = argv.includes('--ref')
+  ? argv[argv.indexOf('--ref') + 1]
+  : (process.env.SCREENSHOT_DIFF_REF || 'HEAD');
+if (!BASE_REF) {
+  console.error('--ref needs a commit-ish');
+  process.exit(2);
+}
+
+// True when the command exits 0. `git diff --quiet` reports "no difference" as
+// exit 0 and "differs" as exit 1, and execSync throws on a non-zero exit, so the
+// answer has to be read from the throw rather than from stdout.
+function gitQuiet(cmd) {
+  try {
+    execSync(cmd, { cwd: ROOT, stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 const VIEWPORT = { width: 1440, height: 900 };
 const THEMES = ['dark', 'light'];
@@ -48,11 +74,11 @@ const MIN_THEME_SEPARATION_PCT = 5;
 
 // ------------------------------------------------------------ in-page code
 
-const PREP_SOURCE = ENSURE_SETUP_OPEN_SOURCE + String.raw`
+const PREP_SOURCE = ENSURE_SETUP_OPEN_SOURCE + ENSURE_VIEW_SOURCE + String.raw`
 // Runs after load, before the screenshot. Forces the two builds into the same
-// setup-panel state (approved behavior change #1: vanilla shows the panel on
-// every load, the rewrite only on an empty install) and reports the facts the
-// harness needs to know a real page was rendered.
+// view and the same setup-panel state (approved behavior change #1: vanilla
+// shows the panel on every load, the rewrite only on an empty install) and
+// reports the facts the harness needs to know a real page was rendered.
 // Every element's border box, keyed by its position in the tree plus a short
 // identity. A pixel count says how much changed; this says WHAT moved, which
 // is the difference between "a button shifted 4px" and "the same glyphs landed
@@ -76,13 +102,22 @@ function boxes() {
   return out;
 }
 
-async function prep() {
+async function prep(wantView) {
+  // View first: switching it replaces the whole main region, so the setup panel
+  // and the row counts have to be read after the switch, not before.
+  const viewSwitched = await ensureView(wantView);
   const toggled = await ensureSetupOpen();
   await nextFrame();
   const { rows, playerRows } = countRows();
   const doc = document.documentElement;
   return {
     toggled, rows, playerRows, boxes: boxes(),
+    view: currentView(),
+    viewSwitched,
+    hasViewToggle: !!document.getElementById('viewToggle'),
+    // A Glance card with no suggestion in it is a notice ("import rankings"),
+    // which would screenshot consistently and prove nothing about the card.
+    glancePicks: document.querySelectorAll('.glance-pick').length,
     theme: doc.getAttribute('data-theme'),
     scrollWidth: doc.scrollWidth,
     scrollHeight: doc.scrollHeight,
@@ -105,7 +140,8 @@ async function openPage(host) {
   return page;
 }
 
-async function shoot(page, origin, state, theme) {
+async function shoot(page, origin, sc, theme) {
+  const state = sc.state;
   // Seed from a 404 on the SAME origin, not from the app itself. Loading the
   // app first and clearing localStorage underneath it is a race: the rewrite's
   // useTheme reads ffTheme at mount and writes it back in an effect, so a seed
@@ -125,7 +161,8 @@ async function shoot(page, origin, state, theme) {
     errors.push(p.exceptionDetails?.exception?.description || p.exceptionDetails?.text);
   });
   const info = await page.eval(
-    `(async () => { ${PREP_SOURCE}\nreturn await prep(); })()`, { awaitPromise: true });
+    `(async () => { ${PREP_SOURCE}\nreturn await prep(${JSON.stringify(sc.view || null)}); })()`,
+    { awaitPromise: true });
   const { data } = await page.send('Page.captureScreenshot', {
     format: 'png', captureBeyondViewport: true, fromSurface: true, optimizeForSpeed: false,
   });
@@ -302,8 +339,8 @@ const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)
 
 function writeArtifacts(name, old, neu, cmp) {
   const files = {
-    [`${name}.vanilla.png`]: old,
-    [`${name}.preact.png`]: neu,
+    [`${name}.baseline.png`]: old,
+    [`${name}.head.png`]: neu,
     [`${name}.side-by-side.png`]: sideBySide(old, neu),
     [`${name}.diff.png`]: diffImage(neu, cmp),
   };
@@ -324,6 +361,17 @@ function vacuityProblems(label, sc, shotResult) {
     out.push(`${label} has data-theme="${info.theme}" but was seeded "${shotResult.theme}"`);
   }
   if (!info.setupVisible) out.push(`${label} setup panel is not visible -- panel state was not forced`);
+  // The comparison is only about this scenario's view if both sides actually
+  // rendered it. Before this check, seeding no view meant the head build
+  // rendered Glance against a baseline rendering the Board, and the harness
+  // dutifully reported the resulting difference as a regression.
+  if (info.view !== sc.view) {
+    out.push(`${label} rendered the ${info.view} view, but the scenario describes ${sc.view}` +
+      (info.hasViewToggle ? '' : ' -- this build has no #viewToggle, so it cannot render it'));
+  }
+  if (sc.view === 'glance' && info.glancePicks === 0) {
+    out.push(`${label} glance card rendered no suggestions -- it is showing a notice, not advice`);
+  }
   if (img.width !== VIEWPORT.width) {
     out.push(`${label} screenshot is ${img.width}px wide, expected ${VIEWPORT.width}`);
   }
@@ -370,12 +418,12 @@ async function selfTest(host) {
   const page = await openPage(host);
   const results = [];
   try {
-    const clean = await shoot(page, cleanSrv.origin, sc.state, 'dark');
+    const clean = await shoot(page, cleanSrv.origin, sc, 'dark');
     for (const p of PERTURBATIONS) {
       const srv = await serve(ROOT, (rel, buf) => (rel === '/css/styles.css'
         ? Buffer.concat([buf, Buffer.from(`\n/* screenshot-diff self-test */\n${p.css}\n`)]) : buf));
       try {
-        const dirty = await shoot(page, srv.origin, sc.state, 'dark');
+        const dirty = await shoot(page, srv.origin, sc, 'dark');
         const cmp = comparePixels(clean.img, dirty.img);
         const geom = compareBoxes(clean.info.boxes, dirty.info.boxes);
         const got = geom.moved.length ? 'layout' : cmp.differing ? 'paint' : 'nothing';
@@ -413,16 +461,49 @@ async function main() {
       execSync(`git worktree remove --force ${m[1]}`, { cwd: ROOT, stdio: VERBOSE ? 'inherit' : 'pipe' });
     }
   }
-  execSync(`git worktree add --detach ${wt} ${OLD_REF}`, { cwd: ROOT, stdio: VERBOSE ? 'inherit' : 'pipe' });
+  execSync(`git worktree add --detach ${wt} ${BASE_REF}`, { cwd: ROOT, stdio: VERBOSE ? 'inherit' : 'pipe' });
+  let trivial = false;
   try {
     const oldSrv = await serve(wt);
     const newSrv = await serve(ROOT);
     servers.push(oldSrv.server, newSrv.server);
-    const sha = execSync(`git rev-parse --short ${OLD_REF}`, { cwd: ROOT }).toString().trim();
-    console.log(`vanilla (${sha}): ${oldSrv.origin}  ->  ${wt}`);
-    console.log(`preact  (head)   : ${newSrv.origin}  ->  ${ROOT}`);
+    const sha = execSync(`git rev-parse --short ${BASE_REF}`, { cwd: ROOT }).toString().trim();
+    // The scenario that expects a difference (approved behavior change #2, the
+    // need-mode row reorder) only expects it against a baseline from before the
+    // Preact rewrite. Against any later baseline those rows are in the same
+    // order, and demanding a difference would fail every run.
+    const preRewrite = !existsSync(join(wt, 'js', 'ui', 'App.js'));
+    // A baseline whose browser-loaded files match the working tree's makes every
+    // scenario identical by construction. That is a legitimate way to run this
+    // (nothing uncommitted to check), but a screen of 0.0000% must not read as
+    // evidence that the UI is intact -- only the sensitivity self-test measures
+    // anything on such a run.
+    //
+    // Derived from what the two SERVED TREES actually contain, not from
+    // commit-SHA equality: `--ref HEAD~1` against a commit that touched only
+    // README.md and this script serves two byte-identical js/css/index.html
+    // trees, yet a SHA comparison called that a real run and printed sixteen
+    // 0.0000% rows plus "Every scenario renders identically" -- exactly the
+    // vacuous pass that got dom-diff.mjs retired. `git diff <ref>` compares the
+    // ref against the WORKING tree, so it subsumes the old dirty-file check;
+    // untracked files are added separately because git diff cannot see them.
+    trivial = gitQuiet(`git diff --quiet ${BASE_REF} -- js css index.html`)
+      && !execSync('git ls-files --others --exclude-standard -- js css index.html',
+        { cwd: ROOT }).toString().trim();
+
+    console.log(`baseline (${sha}): ${oldSrv.origin}  ->  ${wt}`);
+    console.log(`head  (this tree): ${newSrv.origin}  ->  ${ROOT}`);
     console.log(`viewport ${VIEWPORT.width}x${VIEWPORT.height}, full-page capture, themes: ${THEMES.join(', ')}`);
-    console.log(`output           : ${OUT_DIR}\n`);
+    console.log(`output           : ${OUT_DIR}`);
+    console.log(`baseline is ${preRewrite ? 'PRE-rewrite (vanilla)' : 'post-rewrite'}, ref "${BASE_REF}"`);
+    if (trivial) {
+      console.log('\nNOTE: the baseline tree and this tree have identical js/, css/ and');
+      console.log('      index.html, so both sides serve the same files and every scenario');
+      console.log('      below MUST report 0%. That says nothing about the UI. Only the');
+      console.log('      sensitivity self-test at the end measures anything on this run;');
+      console.log('      pass --ref <commit> whose browser-loaded files actually differ.');
+    }
+    console.log('');
 
     chrome = await launchChrome(profile);
     const oldPage = await openPage(chrome.host);
@@ -433,14 +514,14 @@ async function main() {
     for (const sc of SCENARIOS) {
       const perTheme = {};
       for (const theme of THEMES) {
-        const before = await shoot(oldPage, oldSrv.origin, sc.state, theme);
-        const after = await shoot(newPage, newSrv.origin, sc.state, theme);
+        const before = await shoot(oldPage, oldSrv.origin, sc, theme);
+        const after = await shoot(newPage, newSrv.origin, sc, theme);
         before.theme = after.theme = theme;
         perTheme[theme] = { before, after };
 
         const problems = [
-          ...vacuityProblems('vanilla', sc, before),
-          ...vacuityProblems('preact', sc, after),
+          ...vacuityProblems('baseline', sc, before),
+          ...vacuityProblems('head', sc, after),
         ];
 
         const cmp = comparePixels(before.img, after.img);
@@ -453,7 +534,11 @@ async function main() {
         // divider. That reorders table rows, so a large difference here is
         // expected -- but a 0% or 100% difference would mean the harness, not
         // the app, is broken.
-        const expected = !!sc.reordersRows;
+        //
+        // Only against a pre-rewrite baseline. Post-rewrite the rows are already
+        // in the new order, so keeping the expectation would demand a difference
+        // that cannot exist and fail this scenario on every run.
+        const expected = !!sc.reordersRows && preRewrite;
         const geom = compareBoxes(before.info.boxes, after.info.boxes);
         const layoutBroken = !expected
           && (geom.moved.length > 0 || geom.onlyA.length > 0 || geom.onlyB.length > 0);
@@ -485,14 +570,18 @@ async function main() {
           `  rows ${before.info.rows}/${after.info.rows}` +
           `  page height ${before.img.height}/${after.img.height}`);
         reportRegions(regionList);
+        const clicked = [before.info.viewSwitched && 'baseline', after.info.viewSwitched && 'head']
+          .filter(Boolean);
+        console.log(`         view ${before.info.view}/${after.info.view}` +
+          ` (wanted ${sc.view}${clicked.length ? `, toggle clicked in ${clicked.join(' and ')}` : ''})`);
         console.log(`         element boxes: ${before.info.boxes.length}/${after.info.boxes.length},` +
           ` ${geom.moved.length} moved or resized by more than ${LAYOUT_TOLERANCE}px` +
           (geom.onlyA.length || geom.onlyB.length
-            ? `, ${geom.onlyA.length} only in vanilla, ${geom.onlyB.length} only in preact` : ''));
+            ? `, ${geom.onlyA.length} only in baseline, ${geom.onlyB.length} only in head` : ''));
         for (const m of geom.moved.slice(0, VERBOSE ? 20 : 6)) {
           const [dx, dy, dw, dh] = m.d.map((v) => v.toFixed(2));
           console.log(`           moved ${m.key}  dx=${dx} dy=${dy} dw=${dw} dh=${dh}` +
-            `  (vanilla x=${m.from[0].toFixed(2)} y=${m.from[1].toFixed(2)})`);
+            `  (baseline x=${m.from[0].toFixed(2)} y=${m.from[1].toFixed(2)})`);
         }
         if (geom.moved.length > (VERBOSE ? 20 : 6)) {
           console.log(`           ...and ${geom.moved.length - (VERBOSE ? 20 : 6)} more`);
@@ -538,9 +627,18 @@ async function main() {
       console.log(`${s.verdict.padEnd(8)} ${(`${s.scenario} [${s.theme}]`).padEnd(46)}` +
         ` ${s.pct.toFixed(4)}%  (${s.differing.toLocaleString()}/${s.total.toLocaleString()} px)`);
     }
-    console.log(failures === 0
-      ? '\nEvery scenario is pixel-identical in both themes, except the one approved reorder.'
-      : `\n${failures} comparison(s) failed.`);
+    if (failures !== 0) {
+      console.log(`\n${failures} comparison(s) failed.`);
+    } else if (trivial) {
+      console.log('\nNo differences -- but the baseline served the same js/, css/ and index.html');
+      console.log('as this tree, so there was nothing to find. What this run actually proves');
+      console.log('is only that every scenario renders its declared view with content in it,');
+      console.log('in both themes, and that the harness');
+      console.log('still catches the two deliberate perturbations above.');
+    } else {
+      console.log('\nEvery scenario renders identically in both themes against ' +
+        `${BASE_REF}, except any approved difference marked ACCEPTED.`);
+    }
   } finally {
     for (const p of pages) p.close();
     if (chrome) chrome.proc.kill('SIGKILL');

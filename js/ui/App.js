@@ -6,6 +6,7 @@ import { PlayersTable } from './PlayersTable.js';
 import { RosterPanel } from './RosterPanel.js';
 import { DraftLog } from './DraftLog.js';
 import { SetupPanel } from './SetupPanel.js';
+import { GlanceView } from './GlanceView.js';
 import { useSleeperSync } from './useSleeperSync.js';
 
 export function App({ toggleTheme }) {
@@ -31,18 +32,25 @@ export function App({ toggleTheme }) {
     ? draftForOverride.id
     : onClockId;
 
+  // Anything unrecognized (including a state saved before settings.view
+  // existed) falls back to Glance rather than rendering nothing.
+  const view = settings.view === 'board' ? 'board' : 'glance';
+
   return html`
-    <${TopBar} onToggleSetup=${() => setSetupOpen((v) => !v)} syncStatus=${syncStatus} toggleTheme=${toggleTheme} />
+    <${TopBar} onToggleSetup=${() => setSetupOpen((v) => !v)} syncStatus=${syncStatus}
+      toggleTheme=${toggleTheme} view=${view} />
     <${SetupPanel} setupOpen=${setupOpen} onConnected=${startPolling} onDisconnect=${stopPolling} />
-    <main class="layout">
-      <${PlayersTable} filter=${filter} search=${search}
-        onFilter=${setFilter} onSearch=${setSearch}
-        draftForId=${draftForId} onDraftFor=${(id) => setDraftForOverride({ pick: pickCounter, id })} />
-      <aside class="sidebar">
-        <${RosterPanel} />
-        <${DraftLog} />
-      </aside>
-    </main>
+    ${view === 'glance'
+      ? html`<${GlanceView} syncStatus=${syncStatus} />`
+      : html`<main class="layout">
+          <${PlayersTable} filter=${filter} search=${search}
+            onFilter=${setFilter} onSearch=${setSearch}
+            draftForId=${draftForId} onDraftFor=${(id) => setDraftForOverride({ pick: pickCounter, id })} />
+          <aside class="sidebar">
+            <${RosterPanel} />
+            <${DraftLog} />
+          </aside>
+        </main>`}
     <div class="footer-note">Draft data stays in your browser (localStorage). Nothing is sent anywhere except live pick polling to the public Sleeper API, if connected.</div>
   `;
 }
