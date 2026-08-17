@@ -243,8 +243,12 @@ export function GlanceView({ syncStatus }) {
   let countdown = null;
   if (myTeam) {
     const nextPickNo = pickCounter + 1;
-    const until = nextPickForSlot(nextPickNo, myTeam.slot, settings.numTeams) - nextPickNo;
-    countdown = until === 0
+    // nextPickForSlot returns null when the slot falls outside numTeams (a stale
+    // saved roster, a shrunk league). `null - n` is -n, NOT NaN, so an unguarded
+    // subtraction renders a plausible-looking negative countdown.
+    const next = nextPickForSlot(nextPickNo, myTeam.slot, settings.numTeams);
+    const until = Number.isFinite(next) ? next - nextPickNo : null;
+    countdown = until === null ? null : until === 0
       ? html`<div class="glance-turn my-turn">YOU'RE UP</div>`
       : html`<div class="glance-turn">${until} pick${until === 1 ? '' : 's'} until your turn</div>`;
   }
@@ -314,6 +318,16 @@ Do not edit existing rules. Append:
   font-size: 12px;
   color: var(--text-secondary);
 }
+/* .pos-badge sets color:#fff but only backgrounds the six real positions, so a
+   FLEX slot (in the DEFAULT roster) or any custom label typed into Setup renders
+   white-on-card and is invisible in light mode. :where() keeps specificity at
+   zero so the per-position colours still win, and scoping under .glance-needs
+   leaves the board's own .needs-row badges untouched. */
+.glance-needs :where(.pos-badge) {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
 .glance-turn { margin-top: 10px; font-size: 13px; color: var(--text-secondary); }
 .glance-turn.my-turn { color: var(--status-good); font-weight: 700; }
 
