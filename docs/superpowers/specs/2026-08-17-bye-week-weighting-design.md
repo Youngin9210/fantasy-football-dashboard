@@ -211,14 +211,22 @@ Handling:
   believes is active is the same failure class as the sync indicator this project
   already had to build: confident output from data that isn't there.
 
-  **Revised 2026-08-17: the condition is about the BOARD, not the roster.** It
+  **Revised 2026-08-17: the condition is about the BOARD, and ONLY the board.** It
   originally read "when the owner has rostered players and not one of them has a
-  bye", and `hasNoByeData` gated on the roster to match. That made the message a
-  lie in one direction and silent in the other. Case 1 above is the lie: an owner
-  whose roster is nothing but unmatched Sleeper picks (all `bye: null`) — entirely
-  ordinary one pick into a synced draft — was told the weighting was off while it
-  was running normally for every candidate on the board. `hasNoByeData` therefore
-  requires the whole BOARD to lack byes, which is what the message claims.
+  bye", and `hasNoByeData` gated on the roster to match. That was wrong in both
+  directions. Case 1 above is the lie: an owner whose roster is nothing but
+  unmatched Sleeper picks (all `bye: null`) — entirely ordinary one pick into a
+  synced draft — was told the weighting was off while it ran normally for every
+  candidate on the board. And the roster gate made the notice *silent* exactly when
+  it is most useful: with a bye-less CSV imported and the team picked but no pick
+  made yet, `myPlayers.length === 0` suppressed it, in the one window where
+  re-exporting the CSV is still free.
+
+  The shipped condition is: a non-empty board, none of whose players carries a
+  finite bye. The roster is a subset of the board (`GlanceView` derives it by
+  filtering `players`), so a roster clause is implied where it is true and adds only
+  false negatives where it is not. A fresh install stays silent because `GlanceView`
+  early-returns before the check when `players` is empty.
 
 ## Surfacing
 

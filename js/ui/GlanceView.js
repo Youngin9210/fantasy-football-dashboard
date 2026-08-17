@@ -114,12 +114,11 @@ export function GlanceView({ syncStatus }) {
   const state = rosterState(settings.rosterSpots, mine);
 
   // A CSV with no bye column yields bye: null for everyone, so the weighting
-  // contributes nothing and the card must say so. All three gates (a non-empty
-  // roster, ALL of it lacking a bye, and the whole BOARD lacking one) plus the
-  // Number.isFinite/bye-0 distinction live in glance.js so they are unit-tested
-  // rather than trapped in this component — see hasNoByeData. The board is
-  // passed because the message says "your rankings", and gating on the roster
-  // alone made that a lie for a roster of unmatched (bye: null) synced picks.
+  // contributes nothing and the card must say so. The judgement — a non-empty
+  // BOARD, none of it carrying a bye, with the Number.isFinite/bye-0 distinction —
+  // lives in glance.js so it is unit-tested rather than trapped in this component;
+  // see hasNoByeData, which also records why the roster is NOT a gate. `mine` is
+  // still passed for call-site symmetry and is not consulted.
   const noByeData = hasNoByeData(mine, players);
 
   if (state.picksRemaining === 0) return html`<${Notice} sync=${sync}>Your roster is full.<//>`;

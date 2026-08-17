@@ -83,17 +83,33 @@ test('pickTake returns null when everything is excluded or the list is empty', (
 import { hasNoByeData } from '../js/ui/glance.js';
 
 // GlanceView derives `mine` by filtering `players`, so the roster is always a
-// subset of the board. The roster-focused cases below therefore pass the roster
-// AS the board: the smallest board consistent with that invariant, and the one
-// that isolates the roster gate from the board gate tested further down.
+// subset of the board. The cases below therefore pass the roster AS the board:
+// the smallest board consistent with that invariant. Only the board is consulted
+// (see hasNoByeData), so these read as board cases that happen to be rostered.
 const onOwnBoard = (mine) => hasNoByeData(mine, mine);
 
-test('a fresh install with nothing rostered is silent', () => {
-  // Otherwise every new user is told the weighting is off before they have a
-  // roster for it to be off ABOUT.
+test('an empty board is silent', () => {
+  // Nothing imported yet, so there are no rankings to make a claim about. (This
+  // test used to be 'a fresh install with nothing rostered is silent' and pinned a
+  // ROSTER gate. The roster is a subset of the board, so that gate could only add
+  // false negatives — and it added the worst one: before your first pick, with a
+  // bye-less CSV already imported, the notice was suppressed in exactly the window
+  // where you could still re-export the CSV. A fresh install stays silent through
+  // the board gate, which is the honest reason.)
   assert.equal(onOwnBoard([]), false);
   assert.equal(onOwnBoard(undefined), false);
   assert.equal(onOwnBoard(null), false);
+});
+
+test('a bye-less board with NOTHING rostered yet still reports inert weighting', () => {
+  // The bug the roster gate caused, stated as a test. A CSV with no bye column is
+  // imported and the team is picked, but no pick has been made: the weighting is
+  // inert for every candidate on the board and the owner can still fix it by
+  // re-exporting. A roster gate returns false here.
+  assert.equal(hasNoByeData([], [{ bye: null }, { bye: null }]), true);
+  assert.equal(hasNoByeData(undefined, [{}, {}]), true);
+  // And it is still the BOARD that decides: byes present, no claim.
+  assert.equal(hasNoByeData([], [{ bye: null }, { bye: 9 }]), false);
 });
 
 test('a roster whose every player lacks a bye reports inert weighting', () => {

@@ -661,7 +661,25 @@ From the spec: a CSV with no bye column makes the weighting silently inert, whic
 is the same failure class as the sync dot — confident output from data that is not
 there. In `js/ui/GlanceView.js`, after `mine` is computed:
 
+> **SUPERSEDED 2026-08-17 — the predicate below gates on the ROSTER.** Shipped, it
+> is `hasNoByeData(mine, players)` in `js/ui/glance.js`, and it judges the BOARD:
+>
+> ```js
+>   return Array.isArray(boardPlayers) && boardPlayers.length > 0 && !boardPlayers.some(hasBye);
+> ```
+>
+> Two defects in the roster version. It made the message ("No bye weeks in your
+> rankings") a lie for a roster of unmatched Sleeper picks, which all carry
+> `bye: null` while the board is full of byes and the weighting runs normally. And
+> `mine.length > 0` silenced the notice before the owner's first pick — the one
+> window in which he could still re-export the CSV with a bye column. The roster is
+> a subset of the board, so a roster clause adds only false negatives. A fresh
+> install stays silent because `GlanceView` early-returns on an empty `players`.
+> The predicate also lives in `glance.js`, not inline here, so the bye-0 /
+> `Number.isFinite` distinction is unit-tested.
+
 ```js
+  // SUPERSEDED, see marker above -- the shipped gate is on the board, not the roster.
   // A CSV with no bye column yields bye: null for everyone, so the weighting
   // contributes nothing. Say so rather than letting a clean board imply byes
   // were considered. Gated on having rostered players, so a fresh install is
