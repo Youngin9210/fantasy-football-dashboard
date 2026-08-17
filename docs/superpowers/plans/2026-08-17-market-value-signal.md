@@ -114,7 +114,11 @@ test("the owner's real export parses as measured", async () => {
   assert.equal(noel.ecrVsAdp, 152);
   const jacobs = players.find((p) => p.name === 'Josh Jacobs');
   assert.equal(jacobs.ecrVsAdp, -10);
-  assert.equal(jacobs.bye, 8, 'bye still parses -- the new column must not shift the map');
+  // 11, verified against the file. An earlier draft of this plan asserted 8 --
+  // fabricated, not measured: only Jacobs' rank and gap were ever checked. Task
+  // 1's implementer hit the failure and generously attributed it to a refreshed
+  // download; the file's mtime proves it never changed.
+  assert.equal(jacobs.bye, 11, 'bye still parses -- the new column must not shift the map');
 });
 ```
 
