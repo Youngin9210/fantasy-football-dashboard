@@ -128,7 +128,10 @@ function scorePlayer(player, state, limits = {}, weights = {}) {
   }
 
   // Each branch decides the slot story; the bye penalty is applied once, below,
-  // so it cannot be forgotten at one of the four return sites.
+  // so it cannot be forgotten at one of the five score-assignment sites (the
+  // K/DST arm splits into urgent-FILLS and WAIT -- an earlier draft of this
+  // comment said four, and a mutant zeroing the penalty on the fifth passed the
+  // entire suite until a test was added for it).
   let score;
   let reason;
   if (KDEF_POSITIONS.includes(pos)) {

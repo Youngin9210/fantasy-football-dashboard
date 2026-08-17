@@ -379,9 +379,9 @@ test('the bye penalty reaches the FILLS branch, not only BENCH', () => {
   // total <= slots and EVERY bye causes a shortfall — there is no clean-FILLS
   // fixture to compare against. Isolate the penalty with byePenalty: 0 instead.
   const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
-  const p = { pos: 'WR', rank: 40, bye: 7 };
-  const withPenalty = scorePlayer(p, s, {}, {});
-  const without = scorePlayer(p, s, {}, { byePenalty: 0 });
+  const cand = { pos: 'WR', rank: 40, bye: 7 };
+  const withPenalty = scorePlayer(cand, s, {}, {});
+  const without = scorePlayer(cand, s, {}, { byePenalty: 0 });
   assert.equal(withPenalty.reason, 'FILLS WR');
   assert.equal(without.score, 40 - STARTER_BONUS);
   assert.equal(withPenalty.score - without.score, BYE_PENALTY * 2,
@@ -445,9 +445,9 @@ test('an excluded player gets no bye commentary and stays Infinity', () => {
 
 test('weights.byePenalty overrides the constant', () => {
   const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
-  const p = { pos: 'WR', rank: 40, bye: 7 };
-  const base = scorePlayer(p, s, {}, { byePenalty: 0 }).score;
-  assert.equal(scorePlayer(p, s, {}, { byePenalty: 30 }).score - base, 30 * 2);
+  const cand = { pos: 'WR', rank: 40, bye: 7 };
+  const base = scorePlayer(cand, s, {}, { byePenalty: 0 }).score;
+  assert.equal(scorePlayer(cand, s, {}, { byePenalty: 30 }).score - base, 30 * 2);
 });
 
 test('a player with no bye data is never penalized', () => {
