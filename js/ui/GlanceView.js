@@ -2,7 +2,7 @@ import { html, useState, useEffect } from '../vendor/preact.js';
 import { rosterState, recommendOrder } from '../recommend.js';
 import { computeNeeds, assignRosterSlots, nextPickForSlot } from '../draft.js';
 import { useStore } from './useStore.js';
-import { syncFreshness, pickTake } from './glance.js';
+import { syncFreshness, syncAt, pickTake } from './glance.js';
 
 // Re-renders once a second so the "synced Ns ago" text stays honest. Cleared on
 // unmount so the interval cannot outlive the view.
@@ -92,7 +92,10 @@ export function GlanceView({ syncStatus }) {
     }
   }
 
-  const at = syncStatus && typeof syncStatus.at === 'number' ? syncStatus.at : null;
+  // The same helper syncFreshness uses, not a second hand-rolled guard: these
+  // two readings of `status.at` must never disagree about what counts as a
+  // timestamp.
+  const at = syncAt(syncStatus);
   let sync = null;
   if (freshness === 'stale') {
     sync = html`<div class="glance-sync stale">⚠ NOT SYNCING${
