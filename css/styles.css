@@ -259,9 +259,21 @@ table {
 }
 
 /* Layout */
+/* minmax(0, 1fr), not 1fr. `1fr` is minmax(auto, 1fr), and a track whose MIN
+   sizing function is `auto` gives its grid item a content-based automatic
+   minimum size (CSS Grid §6.6) -- so .panel could not shrink below the
+   9-column table's min-content (~619px) and the track inflated with it. At
+   390x844 that laid the page out 634px wide inside a 390px viewport: the
+   horizontal scroll landed on the DOCUMENT, .table-wrap's overflow:auto never
+   engaged (scrollWidth === clientWidth === 619), the Why column was 109px
+   off-screen and the Draft/✕ buttons 242px, and panning right to reach one
+   pushed the sticky top bar off the left edge (sticky protects nothing
+   horizontally). Naming 0 as the min sizing function makes the item's automatic
+   minimum size zero, so the track clamps to the viewport and .table-wrap owns
+   the sideways scroll it was always meant to own. */
 .layout {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 12px;
   padding: 12px;
   align-items: start;
@@ -269,7 +281,9 @@ table {
 
 @media (max-width: 900px) {
   .layout {
-    grid-template-columns: 1fr;
+    /* Same reasoning as above: collapsing to one track does not help if that
+       track is still floored at the table's min-content. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
