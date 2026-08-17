@@ -188,7 +188,13 @@ try {
 
   // 1. A poll must succeed FIRST. Without this, a card that never synced at all
   //    would also read stale, and the stale assertion would prove nothing.
-  const rendered = await waitFor(page, `!!document.querySelector('.glance-sync')`);
+  //    Waits for the HEALTHY DOT, not merely for .glance-sync to exist: with no
+  //    completed poll the card already renders a .glance-sync — the stale banner —
+  //    so the looser condition was satisfied at t=0 and this step raced the very
+  //    first fetch, passing only when the stub's response happened to land inside
+  //    one round trip. Waiting for the thing the step is actually about removes
+  //    the race without weakening anything.
+  const rendered = await waitFor(page, `!!document.querySelector('.glance-sync .sync-dot.ok')`);
   if (!rendered) console.log(`      card text: ${await page.eval(CARD_TEXT)}`);
   const fresh = await page.eval(`document.querySelector('.glance-sync')?.textContent || ''`);
   check('card reads synced after the first poll', /synced/i.test(fresh), JSON.stringify(fresh));
