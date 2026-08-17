@@ -99,7 +99,14 @@ export function GlanceView({ syncStatus }) {
       at === null ? '' : ` — last update ${ago(Date.now() - at)}`
     } · advice above may be stale</div>`;
   } else if (freshness === 'fresh') {
-    sync = html`<div class="glance-sync"><span class="sync-dot ok"></span>${' '}synced ${ago(Date.now() - at)}</div>`;
+    // 'fresh' only means a poll COMPLETED recently — it is returned for a
+    // failing API too, and status.error was previously reported only by the top
+    // bar's SyncStatus, which Task 3 stopped rendering in this view. Without
+    // this branch a responding-but-failing Sleeper API shows a green "synced"
+    // dot here and says nothing anywhere else.
+    sync = syncStatus.ok
+      ? html`<div class="glance-sync"><span class="sync-dot ok"></span>${' '}synced ${ago(Date.now() - at)}</div>`
+      : html`<div class="glance-sync"><span class="sync-dot error"></span>${' '}Sleeper sync error: ${syncStatus.error}</div>`;
   }
 
   return html`<div class="glance-card">
