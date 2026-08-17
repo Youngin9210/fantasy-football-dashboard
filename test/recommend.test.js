@@ -304,6 +304,22 @@ test('posByes lists every rostered bye at a position, nulls included', () => {
   assert.equal(s.posByes.QB, undefined);
 });
 
+test('posByes coerces every non-finite bye to null, not just null itself', () => {
+  // The only non-numeric fixture elsewhere is already `null`, so pushing
+  // player.bye RAW produces an identical array and the coercion goes unverified.
+  // undefined, NaN and a numeric string must all land as null, or a bad value
+  // propagates into byeShortfall's `total` and week matching.
+  const s = rosterState(SPOTS, [
+    { pos: 'RB', rank: 5, bye: 7 },
+    { pos: 'RB', rank: 20, bye: undefined },
+    { pos: 'RB', rank: 30, bye: NaN },
+    { pos: 'RB', rank: 40, bye: '9' },
+    { pos: 'RB', rank: 50, bye: 0 },
+  ]);
+  assert.deepEqual(s.posByes.RB, [7, null, null, null, 0],
+    'a bye of 0 survives as a real week; every non-finite value becomes null');
+});
+
 test('posSlots counts dedicated starting slots and excludes FLEX and BN', () => {
   // SPOTS is QB,RB,RB,WR,WR,TE,FLEX,K,DST + 7 BN
   const s = rosterState(SPOTS, []);
