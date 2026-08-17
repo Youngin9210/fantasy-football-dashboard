@@ -115,32 +115,48 @@ const UNRANKED = 9999;
 function scorePlayer(player, state, limits = {}, weights = {}) {
   const starterBonus = weights.starterBonus ?? STARTER_BONUS;
   const flexBonus = weights.flexBonus ?? FLEX_BONUS;
+  const byePenalty = weights.byePenalty ?? BYE_PENALTY;
   const pos = player.pos || '';
   const rank = Number.isFinite(player.rank) ? player.rank : UNRANKED;
 
   // Roster rules come first: an open slot cannot be filled by a player the
-  // league forbids, so exclusion is checked before any bonus.
+  // league forbids, so exclusion is checked before any bonus. A forbidden
+  // player needs no bye commentary, and Infinity + 6 is still Infinity.
   const limit = limits[pos];
   if (limit !== undefined && (state.posCounts[pos] || 0) >= limit) {
-    return { score: Infinity, reason: `${pos} LIMIT (${limit})`, excluded: true };
+    return { score: Infinity, reason: `${pos} LIMIT (${limit})`, excluded: true, byeWarning: null };
   }
 
+  // Each branch decides the slot story; the bye penalty is applied once, below,
+  // so it cannot be forgotten at one of the four return sites.
+  let score;
+  let reason;
   if (KDEF_POSITIONS.includes(pos)) {
     if (state.kdefUrgent && (state.openStarters[pos] || 0) > 0) {
-      return { score: rank - starterBonus, reason: `FILLS ${pos}`, excluded: false };
+      score = rank - starterBonus; reason = `FILLS ${pos}`;
+    } else {
+      score = rank + KDEF_PENALTY; reason = 'WAIT';
     }
-    return { score: rank + KDEF_PENALTY, reason: 'WAIT', excluded: false };
+  } else if ((state.openStarters[pos] || 0) > 0) {
+    score = rank - starterBonus; reason = `FILLS ${pos}`;
+  } else if (state.openFlex > 0 && FLEX_ELIGIBLE.includes(pos)) {
+    score = rank - flexBonus; reason = 'FILLS FLEX';
+  } else {
+    score = rank; reason = 'BENCH';
   }
 
-  if ((state.openStarters[pos] || 0) > 0) {
-    return { score: rank - starterBonus, reason: `FILLS ${pos}`, excluded: false };
-  }
+  const shortfall = byeShortfall(
+    player.bye,
+    (state.posByes || {})[pos],
+    (state.posSlots || {})[pos]
+  );
 
-  if (state.openFlex > 0 && FLEX_ELIGIBLE.includes(pos)) {
-    return { score: rank - flexBonus, reason: 'FILLS FLEX', excluded: false };
-  }
-
-  return { score: rank, reason: 'BENCH', excluded: false };
+  return {
+    score: score + byePenalty * shortfall,
+    reason,
+    excluded: false,
+    byeWarning: shortfall > 0 ? `BYE ${player.bye} ×${shortfall}` : null,
+  };
 }
 
 // Scores an entire board and returns it sorted, best pick first.

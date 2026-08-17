@@ -352,3 +352,107 @@ test('posSlots reflects a custom roster shape', () => {
   assert.equal(s.posSlots.QB, 2);
   assert.equal(s.posSlots.RB, 1);
 });
+
+import { KDEF_PENALTY } from '../js/recommend.js';
+
+test('the bye penalty is added to a BENCH score', () => {
+  // Three RBs, two of them sharing bye 7, against 2 RB slots. A fourth RB on
+  // bye 7 leaves only 1 available that week against a required 2 -> shortfall 1.
+  // NOTE the fixture: with 3 RBs on byes 7/10/12 a fourth on bye 7 yields ZERO,
+  // because 2 remain available. Depth genuinely covers it. Fixtures here were
+  // verified arithmetically, not by eye.
+  const mine = [{ pos: 'RB', rank: 5, bye: 7 }, { pos: 'RB', rank: 20, bye: 7 },
+                { pos: 'RB', rank: 25, bye: 10 }];
+  const s = rosterState(SPOTS, mine);
+  const doubled = scorePlayer({ pos: 'RB', rank: 50, bye: 7 }, s, {});
+  const fresh = scorePlayer({ pos: 'RB', rank: 50, bye: 14 }, s, {});
+  assert.equal(doubled.reason, 'BENCH', 'the reason still describes the slot');
+  assert.equal(fresh.score, 50, 'a fresh bye adds nothing');
+  assert.equal(doubled.score, 50 + BYE_PENALTY, 'stacking a third on bye 7 costs 1 week');
+});
+
+test('the bye penalty reaches the FILLS branch, not only BENCH', () => {
+  // The regression this guards: applying the penalty at one return site and
+  // forgetting the other three.
+  //
+  // In the FILLS branch a position's slots are by definition not yet full, so
+  // total <= slots and EVERY bye causes a shortfall — there is no clean-FILLS
+  // fixture to compare against. Isolate the penalty with byePenalty: 0 instead.
+  const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
+  const p = { pos: 'WR', rank: 40, bye: 7 };
+  const withPenalty = scorePlayer(p, s, {}, {});
+  const without = scorePlayer(p, s, {}, { byePenalty: 0 });
+  assert.equal(withPenalty.reason, 'FILLS WR');
+  assert.equal(without.score, 40 - STARTER_BONUS);
+  assert.equal(withPenalty.score - without.score, BYE_PENALTY * 2,
+    'two players for two slots means both bye weeks are short');
+});
+
+test('the bye penalty reaches the FLEX branch', () => {
+  const mine = [{ pos: 'RB', rank: 5, bye: 7 }, { pos: 'RB', rank: 20, bye: 10 }];
+  const s = rosterState(SPOTS, mine);
+  const doubled = scorePlayer({ pos: 'RB', rank: 50, bye: 7 }, s, {});
+  assert.equal(doubled.reason, 'FILLS FLEX');
+  assert.equal(doubled.score, 50 - FLEX_BONUS + BYE_PENALTY);
+});
+
+test('the bye penalty reaches the K/DST WAIT branch', () => {
+  const s = rosterState(SPOTS, []);
+  const k = scorePlayer({ pos: 'K', rank: 150, bye: 7 }, s, {});
+  assert.equal(k.reason, 'WAIT');
+  // One slot, one body: its own bye is always a shortfall of 1.
+  assert.equal(k.score, 150 + KDEF_PENALTY + BYE_PENALTY);
+});
+
+test('the bye penalty reaches the urgent K/DST FILLS branch too', () => {
+  // The restructured function has FIVE score-assignment sites, not four: the
+  // urgent K/DST case is a separate arm from WAIT. Skipping the penalty on that
+  // arm alone left every other test in this suite green, so it needs its own.
+  // 13 non-K/DST players -> 3 picks left against 2 K/DST slots -> urgent.
+  const thirteen = Array.from({ length: 13 }, (_, i) => p('WR', i + 1));
+  const s = rosterState(SPOTS, thirteen);
+  assert.equal(s.kdefUrgent, true, 'the hold-back trigger must still fire here');
+  const k = scorePlayer({ pos: 'K', rank: 150, bye: 7 }, s, {});
+  assert.equal(k.reason, 'FILLS K');
+  // One K slot, this K the only body: its own bye is a shortfall of 1.
+  assert.equal(k.score, 150 - STARTER_BONUS + BYE_PENALTY);
+  assert.equal(k.byeWarning, 'BYE 7 ×1');
+});
+
+test('byeWarning names the week and count, and is null when covered', () => {
+  // Needs real depth for a clean case to exist: 3 WRs on 7/7/10 against 2 slots.
+  const s = rosterState(SPOTS, [
+    { pos: 'WR', rank: 8, bye: 7 }, { pos: 'WR', rank: 30, bye: 7 },
+    { pos: 'WR', rank: 44, bye: 10 },
+  ]);
+  assert.equal(scorePlayer({ pos: 'WR', rank: 60, bye: 14 }, s, {}).byeWarning, null,
+    'a fresh bye against covered slots warns about nothing');
+  const w = scorePlayer({ pos: 'WR', rank: 60, bye: 7 }, s, {}).byeWarning;
+  assert.match(w, /7/, 'names the week');
+  assert.match(w, /1/, 'names the count');
+});
+
+test('an excluded player gets no bye commentary and stays Infinity', () => {
+  const s = rosterState(SPOTS, [
+    { pos: 'QB', rank: 1, bye: 7 }, { pos: 'QB', rank: 2, bye: 7 },
+    { pos: 'QB', rank: 3, bye: 7 },
+  ]);
+  const r = scorePlayer({ pos: 'QB', rank: 10, bye: 7 }, s, { QB: 3 });
+  assert.equal(r.excluded, true);
+  assert.equal(r.score, Infinity);
+  assert.equal(r.byeWarning, null);
+});
+
+test('weights.byePenalty overrides the constant', () => {
+  const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
+  const p = { pos: 'WR', rank: 40, bye: 7 };
+  const base = scorePlayer(p, s, {}, { byePenalty: 0 }).score;
+  assert.equal(scorePlayer(p, s, {}, { byePenalty: 30 }).score - base, 30 * 2);
+});
+
+test('a player with no bye data is never penalized', () => {
+  const s = rosterState(SPOTS, [{ pos: 'WR', rank: 8, bye: 7 }]);
+  const r = scorePlayer({ pos: 'WR', rank: 40, bye: null }, s, {});
+  assert.equal(r.score, 40 - STARTER_BONUS);
+  assert.equal(r.byeWarning, null);
+});
