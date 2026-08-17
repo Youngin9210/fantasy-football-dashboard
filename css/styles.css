@@ -746,3 +746,34 @@ table.players tr.limit-divider td {
   border-radius: 4px;
   font-weight: 600;
 }
+
+/* --- The market signal (Board Value column + Glance line) --- */
+/* Emphasis only -- the DIRECTION is carried by the words ("10 early" / "11 late"),
+   never by colour alone, so this stays readable to a colour-blind owner and in a
+   screenshot. The raw sign is backwards from intuition (negative = drafted EARLIER
+   than ranked = he will be gone), which is exactly why no sign is ever painted.
+   Only `early` gets a colour: it is the urgent direction, and colouring both would
+   turn the column into a stripe of noise.
+   --surface-3, --text-primary and --status-critical all exist in BOTH the :root and
+   :root[data-theme="light"] blocks (checked, not assumed), so no var() here can
+   resolve to nothing and compute as `unset`. --status-critical is the SAME red
+   #d03b3b in both, and white on it measures 4.80:1 -- above the 4.5:1 AA floor, so
+   this keeps the theme-following #fff that .why-badge.limit already uses on the
+   same token rather than needing .why-badge.bye's fixed dark ink. */
+.market-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+.market-badge.early { background: var(--status-critical); color: #fff; }
+
+.glance-pick-market {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}

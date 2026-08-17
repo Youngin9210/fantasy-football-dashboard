@@ -4,6 +4,7 @@ import { computeNeeds, assignRosterSlots, nextPickForSlot } from '../draft.js';
 import { useStore } from './useStore.js';
 import { useHeartbeat } from './useHeartbeat.js';
 import { syncFreshness, syncAt, pickTake, hasNoByeData } from './glance.js';
+import { marketNote } from './market.js';
 
 // useHeartbeat used to be a private function here. It moved to ./useHeartbeat.js
 // unchanged when TopBar's SyncStatus started needing the same thing; see that
@@ -77,6 +78,16 @@ function Suggestion({ label, entry }) {
     </div>
     <div class="glance-pick-why">${entry.reason}</div>
     ${entry.byeWarning ? html`<div class="glance-pick-bye">${entry.byeWarning}</div>` : null}
+    ${(() => {
+      // Only when FLAGGED. Glance is a two-second read; an ordinary few-pick gap
+      // is not worth a line here, and it is still on the Board's Value column for
+      // anyone who wants it. Last of the three lines on purpose, so the card reads:
+      // what he fills, what it costs you in byes, what the market does.
+      const m = marketNote(p.ecrVsAdp);
+      return m && m.flagged
+        ? html`<div class="glance-pick-market">${m.long}</div>`
+        : null;
+    })()}
   </div>`;
 }
 
