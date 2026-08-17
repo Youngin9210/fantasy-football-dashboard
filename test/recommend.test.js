@@ -267,6 +267,25 @@ test('single-slot positions always cost their own bye week', () => {
   assert.equal(byeShortfall(10, [7], 1), 0);
 });
 
+test('deep depth never produces a negative shortfall', () => {
+  // Guards the Math.max(0, ...) floor. Three bodies against ONE required starter
+  // leaves slack 2 in every week, so each week's raw figure is negative. No other
+  // fixture reaches slack >= 2, so without this the floor is unverified: removing
+  // it returns -3 here while the rest of the suite still passes.
+  assert.equal(byeShortfall(7, [10, 12], 1), 0);
+  assert.equal(byeShortfall(7, [10, 12, 14], 1), 0);
+});
+
+test('a bye of 0 is a real week, not missing data', () => {
+  // 0 is finite but falsy. Swapping Number.isFinite for a truthiness check would
+  // silently treat week 0 as "no bye" and skip the penalty entirely; nothing else
+  // in the suite uses 0, so that mutation would otherwise ship undetected.
+  assert.equal(byeShortfall(0, [], 2), 1, 'a lone bye-0 player is short in week 0');
+  assert.equal(byeShortfall(0, [0], 2), 2, 'two players both on bye 0');
+  assert.equal(byeShortfall(0, [7], 2), 2, 'bye 0 counts as its own distinct week');
+  assert.equal(byeShortfall(7, [0], 2), 2, 'a rostered bye-0 is a real body AND a real week');
+});
+
 test('degenerate inputs do not throw', () => {
   assert.equal(byeShortfall(7, [], 0), 0);
   assert.equal(byeShortfall(7, undefined, 2), 1);
