@@ -49,6 +49,18 @@ if (!BASE_REF) {
   process.exit(2);
 }
 
+// True when the command exits 0. `git diff --quiet` reports "no difference" as
+// exit 0 and "differs" as exit 1, and execSync throws on a non-zero exit, so the
+// answer has to be read from the throw rather than from stdout.
+function gitQuiet(cmd) {
+  try {
+    execSync(cmd, { cwd: ROOT, stdio: 'pipe' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 const VIEWPORT = { width: 1440, height: 900 };
 const THEMES = ['dark', 'light'];
 
@@ -461,18 +473,23 @@ async function main() {
     // Preact rewrite. Against any later baseline those rows are in the same
     // order, and demanding a difference would fail every run.
     const preRewrite = !existsSync(join(wt, 'js', 'ui', 'App.js'));
-    // A baseline whose tree matches the working tree makes every scenario
-    // identical by construction. That is a legitimate way to run this (nothing
-    // uncommitted to check), but a screen of 0.0000% must not read as evidence
-    // that the UI is intact -- only the sensitivity self-test measures anything.
-    // Only files the browser actually loads count: an edit to README.md or to
-    // this script cannot move a pixel, so a run over one of those is every bit
-    // as trivial as a run over a clean tree and must say so too.
-    const dirtyFiles = execSync('git status --porcelain -- js css index.html',
-      { cwd: ROOT }).toString().trim();
-    const sameCommit = execSync(`git rev-parse ${BASE_REF}`, { cwd: ROOT }).toString().trim()
-      === execSync('git rev-parse HEAD', { cwd: ROOT }).toString().trim();
-    trivial = sameCommit && !dirtyFiles;
+    // A baseline whose browser-loaded files match the working tree's makes every
+    // scenario identical by construction. That is a legitimate way to run this
+    // (nothing uncommitted to check), but a screen of 0.0000% must not read as
+    // evidence that the UI is intact -- only the sensitivity self-test measures
+    // anything on such a run.
+    //
+    // Derived from what the two SERVED TREES actually contain, not from
+    // commit-SHA equality: `--ref HEAD~1` against a commit that touched only
+    // README.md and this script serves two byte-identical js/css/index.html
+    // trees, yet a SHA comparison called that a real run and printed sixteen
+    // 0.0000% rows plus "Every scenario renders identically" -- exactly the
+    // vacuous pass that got dom-diff.mjs retired. `git diff <ref>` compares the
+    // ref against the WORKING tree, so it subsumes the old dirty-file check;
+    // untracked files are added separately because git diff cannot see them.
+    trivial = gitQuiet(`git diff --quiet ${BASE_REF} -- js css index.html`)
+      && !execSync('git ls-files --others --exclude-standard -- js css index.html',
+        { cwd: ROOT }).toString().trim();
 
     console.log(`baseline (${sha}): ${oldSrv.origin}  ->  ${wt}`);
     console.log(`head  (this tree): ${newSrv.origin}  ->  ${ROOT}`);
@@ -480,10 +497,11 @@ async function main() {
     console.log(`output           : ${OUT_DIR}`);
     console.log(`baseline is ${preRewrite ? 'PRE-rewrite (vanilla)' : 'post-rewrite'}, ref "${BASE_REF}"`);
     if (trivial) {
-      console.log('\nNOTE: the baseline is HEAD and the working tree is clean, so both sides');
-      console.log('      serve identical files and every scenario below MUST report 0%. That');
-      console.log('      says nothing about the UI. Only the sensitivity self-test at the end');
-      console.log('      measures anything on this run; pass --ref <commit> to compare trees.');
+      console.log('\nNOTE: the baseline tree and this tree have identical js/, css/ and');
+      console.log('      index.html, so both sides serve the same files and every scenario');
+      console.log('      below MUST report 0%. That says nothing about the UI. Only the');
+      console.log('      sensitivity self-test at the end measures anything on this run;');
+      console.log('      pass --ref <commit> whose browser-loaded files actually differ.');
     }
     console.log('');
 
@@ -612,9 +630,10 @@ async function main() {
     if (failures !== 0) {
       console.log(`\n${failures} comparison(s) failed.`);
     } else if (trivial) {
-      console.log('\nNo differences -- but the baseline WAS this tree, so there was nothing to');
-      console.log('find. What this run actually proves is that every scenario renders its');
-      console.log('declared view with content in it, in both themes, and that the harness');
+      console.log('\nNo differences -- but the baseline served the same js/, css/ and index.html');
+      console.log('as this tree, so there was nothing to find. What this run actually proves');
+      console.log('is only that every scenario renders its declared view with content in it,');
+      console.log('in both themes, and that the harness');
       console.log('still catches the two deliberate perturbations above.');
     } else {
       console.log('\nEvery scenario renders identically in both themes against ' +

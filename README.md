@@ -199,8 +199,10 @@ fixed viewport in both themes, then diffs them pixel by pixel — reporting how
 many pixels differ, where the largest differing regions are, and, separately,
 which element boxes actually moved. Run it before committing a UI change: the
 default baseline is `HEAD`, so it shows exactly what your edits moved. If the
-baseline turns out to be the same tree you are running against, the run says so
-instead of letting a screen of `0.0000%` look like proof.
+baseline serves the same `js/`, `css/` and `index.html` as the working tree —
+whether because it *is* this commit or because the commits in between touched
+only files a browser never loads — the run says so instead of letting a screen
+of `0.0000%` look like proof.
 
 Each scenario declares which view it renders, and both sides must prove they
 rendered it before their pixels are compared. Every run also ends with a
