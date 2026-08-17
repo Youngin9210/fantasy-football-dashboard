@@ -13,7 +13,10 @@ export const STALE_AFTER_MS = 20000;
 //           Absence of evidence is never reported as freshness.
 export function syncFreshness(status, syncEnabled, now) {
   if (!syncEnabled) return 'off';
-  const at = status && typeof status.at === 'number' ? status.at : null;
+  // Number.isFinite, not `typeof === 'number'`: NaN is a number, and NaN > X is
+  // false, so a NaN timestamp would fall through and report 'fresh' — the exact
+  // opposite of this function's contract.
+  const at = status && Number.isFinite(status.at) ? status.at : null;
   if (at === null) return 'stale';
   return now - at > STALE_AFTER_MS ? 'stale' : 'fresh';
 }

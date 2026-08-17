@@ -36,6 +36,14 @@ test('a missing or unstamped status is stale, not fresh', () => {
   assert.equal(syncFreshness({ ok: true, at: null }, true, 1000), 'stale');
 });
 
+test('a non-finite timestamp is stale, not fresh', () => {
+  // NaN and Infinity are typeof 'number', and NaN > X is false, so a naive
+  // guard would let them through and report 'fresh'.
+  assert.equal(syncFreshness({ ok: true, at: NaN }, true, 1000), 'stale');
+  assert.equal(syncFreshness({ ok: true, at: Infinity }, true, 1000), 'stale');
+  assert.equal(syncFreshness({ ok: true, at: '1000' }, true, 1000), 'stale');
+});
+
 test('pickTake returns the first non-excluded entry', () => {
   const ranked = [
     { player: { name: 'A' }, excluded: true },
