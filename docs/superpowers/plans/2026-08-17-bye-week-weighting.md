@@ -493,6 +493,52 @@ byeWarning for the UI and weights.byePenalty for calibration."
 - Consumes: `byeWarning` from each `recommendOrder` entry.
 - Produces: no exports.
 
+- [ ] **Step 0: Badge only an AVOIDABLE shortfall**
+
+Found in Task 3's review, and verified: on an empty roster **8 of 8 candidates**
+carry a non-null `byeWarning`, because the first player at any position is always
+short in his own bye week. Badging all of them is noise, and a warning that
+always fires teaches the user to ignore it — the same failure this project
+already had to design around for the amber sync banner.
+
+A shortfall is only worth showing when a *different bye* would have reduced it.
+That is computable by comparing against a bye nobody holds:
+
+```js
+// In js/recommend.js, exported alongside the others.
+//
+// Shortfall a different bye could have avoided. The first player at a position
+// is always short in his own bye week, and every candidate at that position
+// shares that — so it is not a choice and must not be badged. Two bodies against
+// two slots is likewise unavoidable whatever their byes.
+const NO_SUCH_WEEK = -1; // finite, so it counts as a real week, but one no player holds
+function avoidableByeShortfall(candidateBye, rosteredByes, startersNeeded) {
+  const actual = byeShortfall(candidateBye, rosteredByes, startersNeeded);
+  if (actual === 0) return 0;
+  const floor = byeShortfall(NO_SUCH_WEEK, rosteredByes, startersNeeded);
+  return Math.max(0, actual - floor);
+}
+```
+
+`scorePlayer` sets `byeWarning` from **`avoidableByeShortfall`**, while `score`
+keeps using the raw `byeShortfall`. That split is deliberate: the penalty is what
+the pick actually costs you, which is true even when unavoidable; the badge is
+"you could have done better here", which is only true sometimes. The raw penalty
+is uniform across candidates at a position, so it never distorts their ordering.
+
+Verified behavior — the badge appears in exactly the third row:
+
+| Rostered at RB (2 slots) | Candidate | actual / floor | Badge |
+| --- | --- | --- | --- |
+| none | RB bye 7 | 1 / 1 | no |
+| bye 7, bye 10 | RB bye 12 | 0 / 0 | no |
+| bye 7, bye 10 | RB bye 7 | 1 / 0 | **yes** |
+| bye 7 | WR bye 11 | 2 / 2 | no |
+
+Add tests for each row, plus one asserting `score` still carries the RAW
+penalty when the badge is suppressed — that is the pairing a naive
+implementation gets wrong by switching both to avoidable.
+
 - [ ] **Step 1: Board — a second badge in the WHY column**
 
 In `js/ui/PlayersTable.js`, `PlayerRow` destructures `{ player: p, reason, excluded }`.
