@@ -36,6 +36,15 @@ test('junk is missing, not zero', () => {
   assert.equal(first(row('1.5')).ecrVsAdp, null, 'the column is integers; a decimal is unexpected');
 });
 
+test('a whitespace-padded value still parses', () => {
+  // Guards the .trim(). Without this, removing trim leaves the whole suite green
+  // -- the shape regex rejects " 5 ", so a padded cell would silently become
+  // null. Real exports do ship padded cells; this file's own headers have
+  // trailing spaces ("UPSIDE ").
+  assert.equal(first(row(' 5 ')).ecrVsAdp, 5);
+  assert.equal(first(row('\t-12\t')).ecrVsAdp, -12);
+});
+
 test('a CSV with no such column yields null, with no warning', () => {
   const { players, warnings } = parseRankingsCsv('RK,PLAYER NAME,POS\n1,Some Player,WR1');
   assert.equal(players[0].ecrVsAdp, null);
