@@ -750,6 +750,24 @@ against the real 20s value, not a shortened test-only one."
 
 **Interfaces:** none.
 
+- [ ] **Step 0: Seed a view in the shared scenarios — the harness is currently dead**
+
+Found in Task 3's review. `base()` in `tools/harness.mjs` seeds no `view`, so on
+this branch every scenario loads in **Glance** and gets compared against a
+baseline rendering the **Board**. The tool reports enormous differences for a
+reason unrelated to any regression, which turns the repo's only pixel-level
+guard on the Board into noise nobody will investigate rather than a failing
+signal.
+
+Add `view: 'board'` to `base()` in `tools/harness.mjs` so the existing scenarios
+keep guarding the Board. The null-state "fresh install" scenario has no state to
+seed, so have the prep source click the Board button through the UI for that one
+— `ENSURE_SETUP_OPEN_SOURCE` already demonstrates the pattern.
+
+Then add a Glance scenario (rankings, a selected team, `view: 'glance'`) so the
+new default view is covered too. Without it the view users actually land on is
+the one thing the harness never looks at.
+
 - [ ] **Step 1: Repoint the screenshot baseline**
 
 `tools/screenshot-diff.mjs` compares against the pre-rewrite commit `998d3ad`.
