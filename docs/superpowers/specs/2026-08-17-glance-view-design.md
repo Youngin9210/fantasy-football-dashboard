@@ -156,11 +156,20 @@ success and failure, so no change is needed there.
 | State | Rendering |
 | --- | --- |
 | Fresh | `● synced 4s ago` |
+| Fresh, but the last poll returned an error | The error, with the existing red `.sync-dot.error` |
 | Stale (>20s since last completed poll) | `⚠ NOT SYNCING — last update 3m ago · advice below may be stale` |
 | `sleeperSyncEnabled` false | Nothing — no indicator at all |
 
 The disabled case renders nothing rather than a green dot, because in a manual
 league there is no sync to be healthy.
+
+**Correction, found during implementation.** An earlier draft of this spec said a
+failed-but-completed poll counts as fresh "because the error text is shown
+separately" — while the same spec removed `SyncStatus` from Glance, which was the
+only thing showing it. Net effect: a 404-ing API would render a green dot and
+"synced 2s ago" with the error surfacing nowhere in the app. Freshness and
+success are genuinely different questions (a responding-but-erroring API is not a
+hung one), so the classifier is unchanged; the card must render both signals.
 
 20 seconds is roughly three missed six-second polls. It is deliberately based on
 the last *completed* poll: a hung request never fires its callback, so `at` stops
