@@ -108,8 +108,12 @@ progress if you close the tab mid-draft.
 
 - **Glance** — the default view. One card: the player to take and why, two
   backups, which starting slots are still open, how many picks until your turn,
-  and whether live sync is actually current. Built for a phone next to your
-  laptop while you draft on your league's own site.
+  and whether live sync is actually current. A recommended pick that clashes on
+  byes carries the same `BYE n ×k` line as the Board badge, and if your CSV has
+  no bye column at all the card says so outright ("No bye weeks in your
+  rankings — bye conflicts are not being weighted") rather than letting a clean
+  card imply byes were considered. Built for a phone next to your laptop while
+  you draft on your league's own site.
 - **Board** — one tap away, and what you want for an in-person or non-Sleeper
   draft: the full table with search, filters, and Draft buttons for marking
   every pick by hand.
@@ -118,10 +122,20 @@ progress if you close the tab mid-draft.
   dividers when your CSV includes a tier column.
 - **Best for my roster** — a sort mode that reorders the board by fit with the
   team you're building: unfilled starters first, then bench depth, then K/DST.
-  A WHY badge on each row shows the reasoning. Players at one of your league's
-  position limits sort to the bottom, greyed out, rather than disappearing.
-  Scoring is `rank − bonus`, so an empty starting slot breaks close calls but
-  never overrides a genuinely better player.
+  A WHY badge on each row shows the reasoning, plus a second amber `BYE n ×k`
+  badge when the pick would leave you short at that position in week *n*.
+  Players at one of your league's position limits sort to the bottom, greyed
+  out, rather than disappearing. Scoring is `rank − bonus + 6 × avoidable bye
+  weeks`, so an empty starting slot breaks close calls but never overrides a
+  genuinely better player, and a bye clash costs about six ranking places.
+- **Bye-week weighting** — the recommendation counts the worst single week each
+  pick would leave you unable to field that position, so you never end up with
+  a whole position group off in the same week (both starting RBs on bye 9, say).
+  Only a clash a *different* available player would have avoided is charged and
+  badged: the first tight end you draft is short in his own bye week whatever
+  you do, so he is not penalized for it, but a second RB doubling up on your
+  first RB's bye is. Needs a bye column in your CSV (FantasyPros' `Bye Week`
+  works); without one the weighting contributes nothing and Glance says so.
 - **K and DST held back** — they stay at the bottom of the recommended order
   until you have only enough picks left to fill them, so you never spend an
   early pick on a kicker or finish the draft without a defense.
@@ -143,9 +157,13 @@ progress if you close the tab mid-draft.
   similar are close enough for draft-day purposes; treat QB value as
   slightly underrated by generic rankings since your league pays out 6 for
   passing TDs instead of the more common 4.
-- No bye-week conflict detection, tier-cliff bonuses, or modeling of other
-  teams' needs. The recommendation reflects your roster and your league's
-  position limits, nothing more.
+- No tier-cliff bonuses and no modeling of other teams' needs. The
+  recommendation reflects your roster, your league's position limits, and bye
+  overlap at each position — nothing more.
+- No bye-week planning beyond that overlap: it weighs whether you can field a
+  position in a given week, not full week-by-week lineup projections, and it
+  never looks across positions (a QB and a TE sharing a bye is not a conflict
+  it counts).
 
 ## Local development
 
