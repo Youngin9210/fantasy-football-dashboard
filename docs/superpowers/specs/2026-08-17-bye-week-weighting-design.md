@@ -81,7 +81,40 @@ unfilled starting slot costs the season. Rejected 12 (a 10-rank talent gap losin
 to one bad week is too strong) and 3 (too weak to steer away from a shared K/DST
 bye, where there is no backup at all).
 
-`score = rank − needBonus + BYE_PENALTY × byeShortfall`, lower still winning.
+`score = rank − needBonus + BYE_PENALTY × avoidableByeShortfall`, lower still
+winning.
+
+### Revised 2026-08-17: the score charges only an AVOIDABLE shortfall
+
+The original design charged the RAW shortfall, arguing the cost of a bye hole is
+real whether or not it could have been avoided, and that since the penalty is
+uniform across candidates at a position it could not distort their ordering.
+
+The uniformity argument was right *within* a position and wrong *across* them.
+`tools/calibrate-bye.mjs` made it visible: with an empty TE slot and RB depth, the
+only candidate filling a starting slot — the highest-value pick available — was
+demoted below third-RB FLEX depth, because as the first body at TE it carried a
+shortfall no TE candidate could avoid.
+
+| Weight | First TE (fills a starter) | Fresh RB (FLEX depth) |
+| --- | --- | --- |
+| raw @ 3 | 33 — 1st | 34 |
+| raw @ 6 | 36 — 2nd | 34 |
+| raw @ 12 | 42 — 3rd | 34 |
+| **avoidable @ 6** | **30 — 1st** | 34 |
+
+So the score now uses `avoidableByeShortfall`, the same measure the badge already
+used. Consequences, accepted:
+
+- An unavoidable bye hole is free. It is still a real hole, but no candidate at
+  that position can do anything about it, so pricing it only moved picks between
+  positions — which is the one thing it should not have done.
+- Score and badge now agree, which also removes a class of confusion where a
+  player was penalized with no visible explanation.
+- `FLEX_BONUS` (6) and `BYE_PENALTY` (6) still cancel exactly for an *avoidable*
+  conflict, so a badged FLEX candidate cannot outscore a better-ranked unbadged
+  one. That is now a genuine judgement about avoidable conflicts rather than an
+  accident applying to every pick.
 
 ### FLEX is excluded from `startersNeeded`
 
