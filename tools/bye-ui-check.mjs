@@ -112,6 +112,23 @@ const NULL_BYE_ROSTER = glance({
   players: BOARD_STATE.players.map((p) => (p.drafted ? { ...p, bye: null } : p)),
 });
 
+// The window a roster gate used to SILENCE: a bye-less CSV imported and a team
+// already picked, but no pick made yet -- myPlayers.length === 0. This is exactly
+// where the notice is most useful, since the owner can still re-export the CSV
+// with a bye column. NO_BYES_ANYWHERE above does not exercise it: BOARD_STATE
+// comes from the stacked-bye scenario, which drafts sr1 and sr2 to t0, so every
+// fixture in this file until now has a non-empty roster. Built from BOARD_STATE
+// rather than a bare `base()` call so it stays a board this file already knows
+// renders (team selected, non-empty players) -- only byes and picks are stripped.
+const NO_BYES_ZERO_ROSTER = glance({
+  ...BOARD_STATE,
+  players: BOARD_STATE.players.map((p) => ({
+    ...p, bye: null, drafted: false, draftedByTeamId: null, pickNo: undefined,
+  })),
+  picks: [],
+  pickCounter: 0,
+});
+
 // ------------------------------------------------------------- in-page helpers
 
 const PAGE_HELPERS = String.raw`
@@ -333,6 +350,29 @@ async function noticeChecks(page, origin) {
     lying.picks > 0, `picks=${lying.picks}`);
   check('no missing-bye notice for a null-bye roster on a board that has byes',
     lying.notice === null, J(lying.notice));
+
+  // 3. The window a roster gate used to SILENCE. A bye-less board, a team already
+  //    selected, but no pick made yet: myPlayers.length === 0. A roster gate
+  //    suppressed the notice here even though this is exactly when it matters
+  //    most -- before the first pick is the last moment the owner can still
+  //    re-export the CSV with a bye column. NO_BYES_ANYWHERE above does not cover
+  //    this case: it derives from a state with drafted players, so every browser
+  //    fixture until now had a non-empty roster. This is a unit test in
+  //    test/glance.test.js ('a bye-less board with NOTHING rostered yet still
+  //    reports inert weighting'); this is its first real-browser coverage.
+  await load(page, origin, NO_BYES_ZERO_ROSTER, 'dark');
+  const zeroRoster = await probe(page, `return {
+    picks: document.querySelectorAll('.glance-pick').length,
+    notice: byeNotice(),
+    byeLines: document.querySelectorAll('.glance-pick-bye').length,
+  };`);
+  check('a bye-less board with an empty roster still gives advice',
+    zeroRoster.picks > 0, `picks=${zeroRoster.picks}`);
+  check('the missing-bye notice appears before the first pick is even made',
+    zeroRoster.notice !== null && /not being weighted/.test(zeroRoster.notice || ''),
+    J(zeroRoster.notice));
+  check('nothing is badged on the zero-roster board either',
+    zeroRoster.byeLines === 0, `${zeroRoster.byeLines} bye line(s)`);
 }
 
 // ------------------------------------------------------------------------ main

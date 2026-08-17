@@ -112,7 +112,7 @@ test('a bye-less board with NOTHING rostered yet still reports inert weighting',
   assert.equal(hasNoByeData([], [{ bye: null }, { bye: 9 }]), false);
 });
 
-test('a roster whose every player lacks a bye reports inert weighting', () => {
+test('a board whose every player lacks a bye reports inert weighting, even one that is entirely rostered', () => {
   assert.equal(onOwnBoard([{ bye: null }, { bye: null }]), true);
   assert.equal(onOwnBoard([{}, {}]), true, 'a CSV with no bye column at all');
   assert.equal(onOwnBoard([{ bye: undefined }]), true);
@@ -140,7 +140,7 @@ test('a non-finite bye is never mistaken for data', () => {
   assert.equal(onOwnBoard([{ bye: '7' }]), true, 'an unparsed string is not a week');
 });
 
-test('a null entry in the roster array does not throw', () => {
+test('a null entry in the board array does not throw', () => {
   assert.equal(onOwnBoard([null]), true);
   assert.equal(onOwnBoard([null, { bye: 9 }]), false);
 });
