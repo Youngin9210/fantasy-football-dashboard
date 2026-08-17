@@ -23,6 +23,26 @@ test('the staleness boundary is exact in both directions', () => {
   assert.equal(syncFreshness({ ok: true, at: 0 }, true, 20001), 'stale');
 });
 
+test('an age of exactly zero is fresh', () => {
+  // The poll that just completed. now === at is the normal case immediately
+  // after a successful poll and must never read as skew.
+  assert.equal(syncFreshness({ ok: true, at: 1000 }, true, 1000), 'fresh');
+  assert.equal(syncFreshness({ ok: false, error: 'boom', at: 1000 }, true, 1000), 'fresh');
+});
+
+test('a negative age is stale, not fresh', () => {
+  // A backward system clock jump mid-draft makes `now - at` negative. A plain
+  // `> STALE_AFTER_MS` comparison is false for every negative number, so the
+  // card reported 'fresh' — and ago() clamped the negative elapsed time to
+  // "0s ago" — while sync was completely dead. A jump of Δ suppressed the
+  // warning for Δ + STALE_AFTER_MS. We cannot tell a skewed clock from a
+  // healthy one, so the only safe reading of "the last poll is in the future"
+  // is that we have no trustworthy evidence of freshness.
+  assert.equal(syncFreshness({ ok: true, at: 1000 }, true, 999), 'stale');
+  assert.equal(syncFreshness({ ok: true, at: 61000 }, true, 1000), 'stale');
+  assert.equal(syncFreshness({ ok: false, error: 'boom', at: 1000 }, true, 0), 'stale');
+});
+
 test('a failed poll still counts as a completed poll for freshness', () => {
   // sleeper.js stamps `at` on failure too. A failing-but-responding API is a
   // different problem from a hung one, and the error text is shown separately.

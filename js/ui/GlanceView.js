@@ -4,16 +4,19 @@ import { computeNeeds, assignRosterSlots, nextPickForSlot } from '../draft.js';
 import { useStore } from './useStore.js';
 import { syncFreshness, syncAt, pickTake } from './glance.js';
 
-// Re-renders once a second so the "synced Ns ago" text stays honest. Cleared on
-// unmount so the interval cannot outlive the view.
-function useNow(active) {
-  const [now, setNow] = useState(() => Date.now());
+// A once-a-second re-render heartbeat, nothing more: it exists so the "synced Ns
+// ago" text and the staleness threshold are re-evaluated while the user sits
+// still. Its stored value is deliberately NOT used as the clock — freshness is
+// judged against a Date.now() read during render, because a sampled `now` is up
+// to a second behind by construction and syncFreshness now treats a future
+// timestamp as skew. Cleared on unmount so the interval cannot outlive the view.
+function useHeartbeat(active) {
+  const [, setTick] = useState(0);
   useEffect(() => {
     if (!active) return undefined;
-    const h = setInterval(() => setNow(Date.now()), 1000);
+    const h = setInterval(() => setTick((n) => n + 1), 1000);
     return () => clearInterval(h);
   }, [active]);
-  return now;
 }
 
 function ago(ms) {
@@ -45,9 +48,13 @@ export function GlanceView({ syncStatus }) {
   // memoized on store data — recompute every render.
   const { settings, teams, players, pickCounter } = useStore();
   const syncEnabled = !!settings.sleeperSyncEnabled;
-  // useNow runs above the early returns on purpose: hooks must be called
-  // unconditionally, in the same order, on every render.
-  const freshness = syncFreshness(syncStatus, syncEnabled, useNow(syncEnabled));
+  // useHeartbeat runs above the early returns on purpose: hooks must be called
+  // unconditionally, in the same order, on every render. It only schedules
+  // re-renders; the clock the sync line is judged against is read here, at
+  // render time, so `now` can never lag a just-completed poll.
+  useHeartbeat(syncEnabled);
+  const now = Date.now();
+  const freshness = syncFreshness(syncStatus, syncEnabled, now);
 
   if (players.length === 0) return html`<${Notice}>Import rankings in Setup to get recommendations.<//>`;
   if (!settings.myTeamId) return html`<${Notice}>Pick which team is yours in Setup to get recommendations.<//>`;
@@ -98,8 +105,11 @@ export function GlanceView({ syncStatus }) {
   const at = syncAt(syncStatus);
   let sync = null;
   if (freshness === 'stale') {
+    // No "last update" clause when the stamp is in the future: ago() clamps a
+    // negative elapsed time to "0s", so under a backward clock jump the banner
+    // would read "NOT SYNCING — last update 0s ago", contradicting itself.
     sync = html`<div class="glance-sync stale">⚠ NOT SYNCING${
-      at === null ? '' : ` — last update ${ago(Date.now() - at)}`
+      at === null || now < at ? '' : ` — last update ${ago(now - at)}`
     } · advice above may be stale</div>`;
   } else if (freshness === 'fresh') {
     // 'fresh' only means a poll COMPLETED recently — it is returned for a
@@ -108,7 +118,7 @@ export function GlanceView({ syncStatus }) {
     // this branch a responding-but-failing Sleeper API shows a green "synced"
     // dot here and says nothing anywhere else.
     sync = syncStatus.ok
-      ? html`<div class="glance-sync"><span class="sync-dot ok"></span>${' '}synced ${ago(Date.now() - at)}</div>`
+      ? html`<div class="glance-sync"><span class="sync-dot ok"></span>${' '}synced ${ago(now - at)}</div>`
       : html`<div class="glance-sync"><span class="sync-dot error"></span>${' '}Sleeper sync error: ${syncStatus.error}</div>`;
   }
 

@@ -23,13 +23,24 @@ export function syncAt(status) {
 // 'off'   — sync is disabled; there is nothing to be healthy, so show nothing.
 // 'fresh' — a poll completed recently (success or failure; a responding-but-
 //           failing API is a different problem, reported via status.error).
-// 'stale' — no poll has completed recently, OR we have no timestamp at all.
-//           Absence of evidence is never reported as freshness.
+// 'stale' — no poll has completed recently, OR we have no timestamp at all,
+//           OR the timestamp is in the future. Absence of evidence — and
+//           nonsense evidence — is never reported as freshness.
 export function syncFreshness(status, syncEnabled, now) {
   if (!syncEnabled) return 'off';
   const at = syncAt(status);
   if (at === null) return 'stale';
-  return now - at > STALE_AFTER_MS ? 'stale' : 'fresh';
+  // `age < 0` as well as `age > STALE_AFTER_MS`. If the system clock jumps
+  // backward mid-draft, a bare `> STALE_AFTER_MS` test is false for every
+  // negative age, so a completely dead sync rendered a green dot and — ago()
+  // clamping the negative elapsed time — "synced 0s ago", for the size of the
+  // jump plus STALE_AFTER_MS. A future timestamp is not evidence of freshness.
+  //
+  // This requires the caller to read the clock at render time (see GlanceView):
+  // against a `now` sampled up to a second ago, every successful poll would
+  // land slightly in the "future" and flash the amber banner.
+  const age = now - at;
+  return (age < 0 || age > STALE_AFTER_MS) ? 'stale' : 'fresh';
 }
 
 // recommendOrder sorts excluded entries last, but a board can be entirely
