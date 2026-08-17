@@ -17,6 +17,11 @@ const KDEF_PENALTY = 999;
 const KDEF_BUFFER = 1;
 const KDEF_POSITIONS = ['K', 'DST'];
 
+// A bye costs one week out of roughly fourteen; an unfilled starting slot costs
+// the season. Half of STARTER_BONUS, so a bye conflict breaks a close call but
+// never overrides a clearly better player. Tune here.
+const BYE_PENALTY = 6;
+
 // Snapshot of the roster being built: what's still open, what's already stacked,
 // and how much draft is left.
 function rosterState(rosterSpots = [], myPlayers = []) {
@@ -47,6 +52,37 @@ function rosterState(rosterSpots = [], myPlayers = []) {
     kdefNeeded,
     kdefUrgent: kdefNeeded > 0 && picksRemaining <= kdefNeeded + KDEF_BUFFER,
   };
+}
+
+// How many starter-weeks this pick would leave unfillable at its own position,
+// because of bye overlap.
+//
+// `required` is capped at what is actually rostered. Without that cap the metric
+// fires constantly early in the draft — one RB against two RB slots is "short"
+// in every week regardless of byes — and would measure missing depth rather than
+// bye concentration.
+//
+// Null byes (a Sleeper-synced player absent from the CSV) count toward `total`
+// because they are real bodies at the position, but never match a week, so they
+// read as available everywhere. Optimistic, and the only honest option given we
+// do not know their bye.
+function byeShortfall(candidateBye, rosteredByes = [], startersNeeded = 0) {
+  if (!Number.isFinite(candidateBye)) return 0;
+  const roster = Array.isArray(rosteredByes) ? rosteredByes : [];
+  const needed = Number.isFinite(startersNeeded) ? startersNeeded : 0;
+  if (needed <= 0) return 0;
+
+  const all = [...roster, candidateBye];
+  const total = all.length;
+  const required = Math.min(needed, total);
+
+  const weeks = new Set(all.filter(Number.isFinite));
+  let shortfall = 0;
+  for (const week of weeks) {
+    const onBye = all.filter((b) => b === week).length;
+    shortfall += Math.max(0, required - (total - onBye));
+  }
+  return shortfall;
 }
 
 // Rank of an unranked player: sorts below every ranked one but stays finite so
@@ -108,9 +144,11 @@ export {
   rosterState,
   scorePlayer,
   recommendOrder,
+  byeShortfall,
   UNRANKED,
   STARTER_BONUS,
   FLEX_BONUS,
+  BYE_PENALTY,
   KDEF_PENALTY,
   KDEF_BUFFER,
   KDEF_POSITIONS,

@@ -210,3 +210,65 @@ test('does not mutate the input array', () => {
   recommendOrder(board, rosterState(SPOTS, []), LIMITS);
   assert.deepEqual(board, copy);
 });
+
+import { byeShortfall, BYE_PENALTY } from '../js/recommend.js';
+
+test('BYE_PENALTY is half a starter bonus', () => {
+  assert.equal(BYE_PENALTY, 6);
+  assert.equal(BYE_PENALTY * 2, STARTER_BONUS);
+});
+
+test('a first player at a position costs one shortfall week', () => {
+  // Nothing to spread against yet; every candidate costs the same, so no bye
+  // differentiates a first RB. required caps at 1, not the 2 slots.
+  assert.equal(byeShortfall(7, [], 2), 1);
+});
+
+test('a fresh bye against covered slots costs nothing', () => {
+  assert.equal(byeShortfall(12, [7, 10], 2), 0);
+});
+
+test('doubling up on an existing bye costs one week', () => {
+  assert.equal(byeShortfall(7, [7, 10], 2), 1);
+});
+
+test('both starters sharing a bye costs two weeks', () => {
+  assert.equal(byeShortfall(7, [7], 2), 2);
+});
+
+test('required caps at the slots, not the roster', () => {
+  // Three RBs all on bye 7 against two slots: you lose two starter-weeks, not
+  // three, because you were only ever starting two.
+  assert.equal(byeShortfall(7, [7, 7], 2), 2);
+});
+
+test('a null candidate bye takes no penalty', () => {
+  // An unknown week cannot be reasoned about, so it cannot be shown to conflict.
+  assert.equal(byeShortfall(null, [7, 7], 2), 0);
+  assert.equal(byeShortfall(undefined, [7, 7], 2), 0);
+});
+
+test('null rostered byes count toward depth but never toward a conflict', () => {
+  // A Sleeper-synced player missing from the CSV has bye null. They are a real
+  // body at the position, so they raise `total` and are treated as available in
+  // every week — optimistic, but we do not know otherwise.
+  assert.equal(byeShortfall(7, [null], 2), 1);   // total 2, wk7 available 1, required 2
+  assert.equal(byeShortfall(7, [null, null], 2), 0); // total 3, wk7 available 2, required 2
+});
+
+test('an all-null roster with a null candidate is zero', () => {
+  assert.equal(byeShortfall(null, [null, null], 2), 0);
+});
+
+test('single-slot positions always cost their own bye week', () => {
+  // K and DST: one slot, one rostered, so their own bye is always a shortfall.
+  assert.equal(byeShortfall(7, [], 1), 1);
+  // A second one with a different bye covers it.
+  assert.equal(byeShortfall(10, [7], 1), 0);
+});
+
+test('degenerate inputs do not throw', () => {
+  assert.equal(byeShortfall(7, [], 0), 0);
+  assert.equal(byeShortfall(7, undefined, 2), 1);
+  assert.equal(byeShortfall(7, [], undefined), 0);
+});
