@@ -576,11 +576,15 @@ table.players tr.limit-divider td {
   color: var(--text-secondary);
 }
 /* .pos-badge sets color:#fff but only backgrounds the six real positions, so a
-   FLEX slot — or any custom roster label the user types in Setup — would be
-   white text on the card. Scoped under .glance-needs with :where() (zero
-   specificity) so the per-position colours still win and the board's own
-   .needs-row badges are left exactly as they were. */
-.glance-needs .pos-badge:where(:not(.QB):not(.RB):not(.WR):not(.TE):not(.DST):not(.DEF):not(.K)) {
+   FLEX slot, an IDP label (LB/DL/DB) out of an IDP CSV, or any custom roster
+   label the user types in Setup would be white text on a transparent
+   background over a near-white card — measured at 1.03:1. Invisible.
+   Scoped to the whole .glance-card, not just .glance-needs: the TAKE and THEN
+   lines badge p.pos too, and the original .glance-needs scope left them
+   unreadable. :where() keeps the selector at zero specificity so the
+   per-position colours still win, and .glance-card exists only in the Glance
+   view, so the board's own .needs-row badges are untouched. */
+.glance-card .pos-badge:where(:not(.QB):not(.RB):not(.WR):not(.TE):not(.DST):not(.DEF):not(.K)) {
   background: var(--baseline);
   color: var(--text-primary);
 }
