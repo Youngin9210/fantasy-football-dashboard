@@ -125,9 +125,11 @@ progress if you close the tab mid-draft.
   A WHY badge on each row shows the reasoning, plus a second amber `BYE n ×k`
   badge when the pick would leave you short at that position in week *n*.
   Players at one of your league's position limits sort to the bottom, greyed
-  out, rather than disappearing. Scoring is `rank − bonus + 6 × avoidable bye
-  weeks`, so an empty starting slot breaks close calls but never overrides a
-  genuinely better player, and a bye clash costs about six ranking places.
+  out, rather than disappearing. Scoring is `rank − bonus + 6 × avoidable
+  starters short in your worst bye week`, so an empty starting slot breaks
+  close calls but never overrides a genuinely better player, and each starter
+  a pick would leave you short in that worst week costs about six ranking
+  places.
 - **Bye-week weighting** — the recommendation counts the worst single week each
   pick would leave you unable to field that position, so you never end up with
   a whole position group off in the same week (both starting RBs on bye 9, say).

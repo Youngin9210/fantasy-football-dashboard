@@ -75,13 +75,13 @@ test('doubling up on an existing bye costs one week', () => {
   assert.equal(byeShortfall(7, [7, 10], 2), 1);
 });
 
-test('both starters sharing a bye costs two weeks', () => {
+test('both starters sharing a bye leaves two starters short in that one week', () => {
   assert.equal(byeShortfall(7, [7], 2), 2);
 });
 
 test('required caps at the slots, not the roster', () => {
-  // Three RBs all on bye 7 against two slots: you lose two starter-weeks, not
-  // three, because you were only ever starting two.
+  // Three RBs all on bye 7 against two slots: your worst week is two starters
+  // short, not three, because you were only ever starting two.
   assert.equal(byeShortfall(7, [7, 7], 2), 2);
 });
 
