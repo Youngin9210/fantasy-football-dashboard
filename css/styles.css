@@ -593,12 +593,26 @@ table.players tr.limit-divider td {
    FLEX slot, an IDP label (LB/DL/DB) out of an IDP CSV, or any custom roster
    label the user types in Setup would be white text on a transparent
    background over a near-white card — measured at 1.03:1. Invisible.
-   Scoped to the whole .glance-card, not just .glance-needs: the TAKE and THEN
-   lines badge p.pos too, and the original .glance-needs scope left them
-   unreadable. :where() keeps the selector at zero specificity so the
-   per-position colours still win, and .glance-card exists only in the Glance
-   view, so the board's own .needs-row badges are untouched. */
-.glance-card .pos-badge:where(:not(.QB):not(.RB):not(.WR):not(.TE):not(.DST):not(.DEF):not(.K)) {
+   :where() keeps the selector at zero specificity so the per-position colours
+   still win.
+
+   UNSCOPED on purpose. This rule used to be prefixed `.glance-card `, on the
+   reasoning that the Board's own badges were fine — they are not. `.glance-card`
+   exists only in the Glance view, so the Board's `.needs-row` and
+   `table.players` never saw the fallback, and FLEX is the COMMON case there: the
+   default roster shape has a FLEX slot, so an owner who has not filled it sees
+   an invisible chip in the roster panel's "Needs:" row on every load. Measured
+   in the light theme, .needs-row FLEX before/after: 1.03:1 -> 10.99:1. The dark
+   theme masked the bug at 17.42:1, as bare white text with no badge shape, which
+   is why it survived: it is invisible only to someone developing in light mode,
+   and shapeless only to someone developing in dark.
+
+   Dropping the prefix lowers this rule's specificity from (0,2,0) to (0,1,0),
+   which cannot change any of the six standard badges: `.pos-badge.QB` and
+   friends are (0,2,0) and, more decisively, the :where() exclusion list means
+   this selector does not match them at all. Verified byte-identical for
+   QB/RB/WR/TE/DST/DEF/K in both themes. */
+.pos-badge:where(:not(.QB):not(.RB):not(.WR):not(.TE):not(.DST):not(.DEF):not(.K)) {
   background: var(--baseline);
   color: var(--text-primary);
 }
