@@ -665,6 +665,34 @@ which name is present). Requirements:
   the scoring — a calibration that drifts from the shipped scorer tells you
   about a program you are not running. This is why `weights.byePenalty` exists.
 
+- [ ] **Step 1b: Make the FLEX_BONUS interaction visible**
+
+Found during Task 4's fixes and verified: `FLEX_BONUS` and `BYE_PENALTY` are both
+**6**, so one shortfall week *exactly* erases the FLEX bonus. A FLEX-filling
+candidate with a bye conflict scores its raw rank — identical to bench depth at
+the same rank:
+
+```
+2 RBs rostered on byes 7 and 10 (RB slots full, FLEX open), candidate RB rank 40:
+  bye 14 (fresh)     -> 34   FILLS FLEX
+  bye 7  (conflict)  -> 40   FILLS FLEX   BYE 7 ×1     <- the -6 is fully cancelled
+```
+
+That is an accident of two independently chosen constants, not a decision, and it
+has a visible consequence: a badged FLEX candidate can never outscore a
+better-ranked unbadged one, so the badge tends to land on a backup suggestion
+rather than the headline pick.
+
+The calibration must make this legible rather than bury it. Include in the board a
+FLEX-eligible candidate with a bye conflict alongside an equal-rank one without,
+and print each row's `reason` and `byeWarning` next to the score so the
+cancellation is readable at `byePenalty` 6 and visibly not at 3 or 12.
+
+Add a line to the output naming the relationship explicitly — something like
+`note: byePenalty 6 == FLEX_BONUS 6, so one shortfall week cancels the FLEX bonus
+exactly`. The owner is choosing a weight; this interaction is part of what they
+are choosing and should not have to be rediscovered.
+
 - [ ] **Step 2: Run it and sanity-check by hand**
 
 Run: `node tools/calibrate-bye.mjs`
