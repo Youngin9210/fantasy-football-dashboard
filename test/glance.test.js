@@ -82,26 +82,32 @@ test('pickTake returns null when everything is excluded or the list is empty', (
 // --- hasNoByeData ----------------------------------------------------------
 import { hasNoByeData } from '../js/ui/glance.js';
 
+// GlanceView derives `mine` by filtering `players`, so the roster is always a
+// subset of the board. The roster-focused cases below therefore pass the roster
+// AS the board: the smallest board consistent with that invariant, and the one
+// that isolates the roster gate from the board gate tested further down.
+const onOwnBoard = (mine) => hasNoByeData(mine, mine);
+
 test('a fresh install with nothing rostered is silent', () => {
   // Otherwise every new user is told the weighting is off before they have a
   // roster for it to be off ABOUT.
-  assert.equal(hasNoByeData([]), false);
-  assert.equal(hasNoByeData(undefined), false);
-  assert.equal(hasNoByeData(null), false);
+  assert.equal(onOwnBoard([]), false);
+  assert.equal(onOwnBoard(undefined), false);
+  assert.equal(onOwnBoard(null), false);
 });
 
 test('a roster whose every player lacks a bye reports inert weighting', () => {
-  assert.equal(hasNoByeData([{ bye: null }, { bye: null }]), true);
-  assert.equal(hasNoByeData([{}, {}]), true, 'a CSV with no bye column at all');
-  assert.equal(hasNoByeData([{ bye: undefined }]), true);
-  assert.equal(hasNoByeData([{ bye: NaN }]), true, 'NaN is not bye data');
+  assert.equal(onOwnBoard([{ bye: null }, { bye: null }]), true);
+  assert.equal(onOwnBoard([{}, {}]), true, 'a CSV with no bye column at all');
+  assert.equal(onOwnBoard([{ bye: undefined }]), true);
+  assert.equal(onOwnBoard([{ bye: NaN }]), true, 'NaN is not bye data');
 });
 
 test('one rostered player WITH a bye is a hole, not an inert feature', () => {
   // The weighting IS running; that player is simply missing from the CSV. Saying
   // "bye conflicts are not being weighted" here would be a lie.
-  assert.equal(hasNoByeData([{ bye: 9 }, { bye: null }]), false);
-  assert.equal(hasNoByeData([{ bye: null }, { bye: 9 }]), false);
+  assert.equal(onOwnBoard([{ bye: 9 }, { bye: null }]), false);
+  assert.equal(onOwnBoard([{ bye: null }, { bye: 9 }]), false);
 });
 
 test('a rostered bye of 0 is real data, not missing data', () => {
@@ -109,16 +115,51 @@ test('a rostered bye of 0 is real data, not missing data', () => {
   // and claims the weighting is off while it is actually running — byeShortfall
   // treats bye 0 as a real week, so the two must agree. A mutant swapping the
   // guard for truthiness survives every other assertion in this file.
-  assert.equal(hasNoByeData([{ bye: 0 }]), false);
-  assert.equal(hasNoByeData([{ bye: 0 }, { bye: null }]), false);
+  assert.equal(onOwnBoard([{ bye: 0 }]), false);
+  assert.equal(onOwnBoard([{ bye: 0 }, { bye: null }]), false);
 });
 
 test('a non-finite bye is never mistaken for data', () => {
-  assert.equal(hasNoByeData([{ bye: Infinity }]), true);
-  assert.equal(hasNoByeData([{ bye: '7' }]), true, 'an unparsed string is not a week');
+  assert.equal(onOwnBoard([{ bye: Infinity }]), true);
+  assert.equal(onOwnBoard([{ bye: '7' }]), true, 'an unparsed string is not a week');
 });
 
 test('a null entry in the roster array does not throw', () => {
-  assert.equal(hasNoByeData([null]), true);
-  assert.equal(hasNoByeData([null, { bye: 9 }]), false);
+  assert.equal(onOwnBoard([null]), true);
+  assert.equal(onOwnBoard([null, { bye: 9 }]), false);
+});
+
+test('a null-bye ROSTER on a board that has byes is not inert weighting', () => {
+  // The case the roster-only gate got wrong, and the reason the board argument
+  // exists. An unmatched Sleeper pick becomes a manual player with bye: null, so
+  // an owner one pick into a synced draft can hold nothing but null byes while
+  // every candidate on the board has one. The weighting is running normally for
+  // all of them; the message "No bye weeks in your rankings — bye conflicts are
+  // not being weighted" would be false.
+  assert.equal(hasNoByeData([{ bye: null }], [{ bye: null }, { bye: 9 }]), false);
+  assert.equal(hasNoByeData(
+    [{ bye: null }, { bye: null }],
+    [{ bye: null }, { bye: null }, { bye: 7 }, { bye: 10 }]), false);
+  // Board byes are read with the same Number.isFinite distinction as roster ones:
+  // a bye-0 player on the board is real data too.
+  assert.equal(hasNoByeData([{ bye: null }], [{ bye: null }, { bye: 0 }]), false);
+});
+
+test('a board with no byes anywhere is what the message actually claims', () => {
+  // The honest case: a CSV with no bye column, so nothing on the board carries
+  // one and the weighting really does contribute nothing.
+  assert.equal(hasNoByeData([{ bye: null }], [{ bye: null }, { bye: null }]), true);
+  assert.equal(hasNoByeData([{ bye: null }], [{}, { bye: undefined }, { bye: '7' }]), true);
+  // A null entry in the BOARD array does not throw either, and is not bye data.
+  assert.equal(hasNoByeData([{ bye: null }], [null, { bye: null }]), true);
+  assert.equal(hasNoByeData([{ bye: null }], [null, { bye: 9 }]), false);
+});
+
+test('no board to judge means no claim', () => {
+  // Absence of evidence is not evidence, the same rule syncFreshness follows for
+  // a missing timestamp. Falling back to the roster-only answer here would put
+  // the old lie back for any caller that forgot the argument.
+  assert.equal(hasNoByeData([{ bye: null }]), false);
+  assert.equal(hasNoByeData([{ bye: null }], undefined), false);
+  assert.equal(hasNoByeData([{ bye: null }], null), false);
 });

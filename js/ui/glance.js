@@ -56,10 +56,23 @@ export function pickTake(ranked) {
 // were considered — confident output from data that is not there is the same
 // failure class as a green sync dot over a dead poll.
 //
-// Two gates, both load-bearing:
+// Three gates, all load-bearing:
 //   - a non-empty roster, so a fresh install is silent;
-//   - ALL of them lacking a bye, because a single synced player without one is a
-//     hole in the data, not an inert feature.
+//   - ALL of the roster lacking a bye, because a single synced player without one
+//     is a hole in the data, not an inert feature;
+//   - ALL of the BOARD lacking one too, because that is what the message claims.
+//
+// The board gate is the difference between the message and a lie. It used to gate
+// on the roster alone while saying "No bye weeks in your rankings": an unmatched
+// Sleeper pick becomes a manual player with bye: null, so an owner whose roster
+// was entirely unmatched synced picks — completely ordinary right after his first
+// pick — was told the weighting was off while it was running normally for every
+// candidate on the board. That is this feature's own failure class, inverted:
+// a confident claim about machinery that is in fact working.
+//
+// A missing board is not evidence either. Called without one, this returns false
+// rather than falling back to the roster-only answer: the claim is about the
+// rankings, and with no rankings in hand there is nothing to claim.
 //
 // Number.isFinite, not truthiness: bye 0 is a real week in this codebase (see
 // byeShortfall's own bye-0 tests), and `!p.bye` would read a rostered bye-0
@@ -68,7 +81,9 @@ export function pickTake(ranked) {
 // Lives here rather than inline in GlanceView so that exact distinction is
 // pinned by a unit test — a mutant swapping it for truthiness survived the whole
 // suite while the predicate was a local const.
-export function hasNoByeData(myPlayers) {
+export function hasNoByeData(myPlayers, boardPlayers) {
   if (!Array.isArray(myPlayers) || myPlayers.length === 0) return false;
-  return !myPlayers.some((p) => Number.isFinite(p && p.bye));
+  if (!Array.isArray(boardPlayers)) return false;
+  const hasBye = (p) => Number.isFinite(p && p.bye);
+  return !myPlayers.some(hasBye) && !boardPlayers.some(hasBye);
 }
