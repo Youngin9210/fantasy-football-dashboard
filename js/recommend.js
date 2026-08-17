@@ -36,9 +36,25 @@ function rosterState(rosterSpots = [], myPlayers = []) {
   }
 
   const posCounts = {};
+  const posByes = {};
   for (const player of myPlayers) {
     if (!player.pos) continue;
     posCounts[player.pos] = (posCounts[player.pos] || 0) + 1;
+    // Nulls are kept: a Sleeper-synced player with no bye is still a body at the
+    // position, so byeShortfall needs them in `total`.
+    (posByes[player.pos] = posByes[player.pos] || []).push(
+      Number.isFinite(player.bye) ? player.bye : null
+    );
+  }
+
+  // Total dedicated starting slots per position, from the league's roster shape.
+  // Deliberately NOT derived from openStarters, which counts EMPTY slots and
+  // shrinks as the roster fills — using that would collapse every bye shortfall
+  // to 0 once a position's starters were filled.
+  const posSlots = {};
+  for (const label of rosterSpots) {
+    if (label === 'FLEX' || label === 'BN') continue;
+    posSlots[label] = (posSlots[label] || 0) + 1;
   }
 
   const picksRemaining = Math.max(0, rosterSpots.length - myPlayers.length);
@@ -48,6 +64,8 @@ function rosterState(rosterSpots = [], myPlayers = []) {
     openStarters,
     openFlex,
     posCounts,
+    posByes,
+    posSlots,
     picksRemaining,
     kdefNeeded,
     kdefUrgent: kdefNeeded > 0 && picksRemaining <= kdefNeeded + KDEF_BUFFER,

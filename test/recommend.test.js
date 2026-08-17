@@ -291,3 +291,48 @@ test('degenerate inputs do not throw', () => {
   assert.equal(byeShortfall(7, undefined, 2), 1);
   assert.equal(byeShortfall(7, [], undefined), 0);
 });
+
+test('posByes lists every rostered bye at a position, nulls included', () => {
+  const s = rosterState(SPOTS, [
+    { pos: 'RB', rank: 5, bye: 7 },
+    { pos: 'RB', rank: 20, bye: 10 },
+    { pos: 'RB', rank: 40, bye: null },
+    { pos: 'WR', rank: 8, bye: 7 },
+  ]);
+  assert.deepEqual(s.posByes.RB, [7, 10, null]);
+  assert.deepEqual(s.posByes.WR, [7]);
+  assert.equal(s.posByes.QB, undefined);
+});
+
+test('posSlots counts dedicated starting slots and excludes FLEX and BN', () => {
+  // SPOTS is QB,RB,RB,WR,WR,TE,FLEX,K,DST + 7 BN
+  const s = rosterState(SPOTS, []);
+  assert.equal(s.posSlots.RB, 2);
+  assert.equal(s.posSlots.WR, 2);
+  assert.equal(s.posSlots.QB, 1);
+  assert.equal(s.posSlots.TE, 1);
+  assert.equal(s.posSlots.K, 1);
+  assert.equal(s.posSlots.DST, 1);
+  assert.equal(s.posSlots.FLEX, undefined, 'FLEX is not a dedicated slot');
+  assert.equal(s.posSlots.BN, undefined, 'BN is not a starting slot');
+});
+
+test('posSlots is constant as the roster fills, unlike openStarters', () => {
+  // This is the trap: openStarters shrinks to 0 once both RB slots are filled.
+  // If posSlots did the same, every bye shortfall would collapse to 0 at exactly
+  // the point byes start mattering.
+  const empty = rosterState(SPOTS, []);
+  const full = rosterState(SPOTS, [
+    { pos: 'RB', rank: 5, bye: 7 },
+    { pos: 'RB', rank: 20, bye: 10 },
+  ]);
+  assert.equal(empty.posSlots.RB, 2);
+  assert.equal(full.posSlots.RB, 2, 'posSlots must not shrink');
+  assert.equal(full.openStarters.RB, undefined, 'openStarters does shrink');
+});
+
+test('posSlots reflects a custom roster shape', () => {
+  const s = rosterState(['QB', 'QB', 'RB', 'FLEX', 'BN'], []);
+  assert.equal(s.posSlots.QB, 2);
+  assert.equal(s.posSlots.RB, 1);
+});
