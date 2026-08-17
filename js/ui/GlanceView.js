@@ -26,8 +26,49 @@ function ago(ms) {
   return `${m}m ${s % 60}s ago`;
 }
 
-function Notice({ children }) {
-  return html`<div class="glance-card"><p class="glance-notice">${children}</p></div>`;
+// The sync line, built once per render and threaded through Card so that EVERY
+// return path carries it. It used to be built at the bottom of GlanceView, below
+// four early `return html`<${Notice}>...`` statements, so a dead sync was
+// completely invisible — no .glance-sync, no sync-error text anywhere on the
+// page (Task 3 also stopped rendering the top bar's SyncStatus in this view) —
+// in exactly the states a draft actually starts in. Connecting Sleeper before
+// the commissioner posts the draft order leaves myTeamId unset, and the card
+// would sit on "Pick which team is yours in Setup" while sync was dead.
+//
+// Returns null only for 'off': with sync disabled there is nothing to be
+// healthy, so nothing is claimed.
+function syncLine(status, freshness, now) {
+  const at = syncAt(status);
+  if (freshness === 'stale') {
+    // No "last update" clause when the stamp is in the future: ago() clamps a
+    // negative elapsed time to "0s", so under a backward clock jump the banner
+    // would read "NOT SYNCING — last update 0s ago", contradicting itself.
+    return html`<div class="glance-sync stale">⚠ NOT SYNCING${
+      at === null || now < at ? '' : ` — last update ${ago(now - at)}`
+    } · advice above may be stale</div>`;
+  }
+  if (freshness === 'fresh') {
+    // 'fresh' only means a poll COMPLETED recently — it is returned for a
+    // failing API too, and status.error was previously reported only by the top
+    // bar's SyncStatus, which Task 3 stopped rendering in this view. Without
+    // this branch a responding-but-failing Sleeper API shows a green "synced"
+    // dot here and says nothing anywhere else.
+    return status.ok
+      ? html`<div class="glance-sync"><span class="sync-dot ok"></span>${' '}synced ${ago(now - at)}</div>`
+      : html`<div class="glance-sync"><span class="sync-dot error"></span>${' '}Sleeper sync error: ${status.error}</div>`;
+  }
+  return null;
+}
+
+// The single wrapper every Glance render goes through: whatever the body is, the
+// sync line is emitted after it. New early returns get the sync signal for free
+// instead of silently dropping it.
+function Card({ sync, children }) {
+  return html`<div class="glance-card">${children}${sync}</div>`;
+}
+
+function Notice({ sync, children }) {
+  return html`<${Card} sync=${sync}><p class="glance-notice">${children}</p><//>`;
 }
 
 function Suggestion({ label, entry }) {
@@ -55,23 +96,25 @@ export function GlanceView({ syncStatus }) {
   useHeartbeat(syncEnabled);
   const now = Date.now();
   const freshness = syncFreshness(syncStatus, syncEnabled, now);
+  // Built before the first early return, so no return path below can omit it.
+  const sync = syncLine(syncStatus, freshness, now);
 
-  if (players.length === 0) return html`<${Notice}>Import rankings in Setup to get recommendations.<//>`;
-  if (!settings.myTeamId) return html`<${Notice}>Pick which team is yours in Setup to get recommendations.<//>`;
+  if (players.length === 0) return html`<${Notice} sync=${sync}>Import rankings in Setup to get recommendations.<//>`;
+  if (!settings.myTeamId) return html`<${Notice} sync=${sync}>Pick which team is yours in Setup to get recommendations.<//>`;
 
   const mine = players
     .filter((p) => p.drafted && p.draftedByTeamId === settings.myTeamId)
     .sort((a, b) => (a.pickNo || 0) - (b.pickNo || 0));
   const state = rosterState(settings.rosterSpots, mine);
 
-  if (state.picksRemaining === 0) return html`<${Notice}>Your roster is full.<//>`;
+  if (state.picksRemaining === 0) return html`<${Notice} sync=${sync}>Your roster is full.<//>`;
 
   const ranked = recommendOrder(
     players.filter((p) => !p.drafted), state, settings.positionLimits
   );
   const take = pickTake(ranked);
   if (!take) {
-    return html`<${Notice}>
+    return html`<${Notice} sync=${sync}>
       No draftable player left — every remaining player is at one of your position limits.
       Check Position limits in Setup, or switch to the Board to override.
     <//>`;
@@ -99,30 +142,7 @@ export function GlanceView({ syncStatus }) {
     }
   }
 
-  // The same helper syncFreshness uses, not a second hand-rolled guard: these
-  // two readings of `status.at` must never disagree about what counts as a
-  // timestamp.
-  const at = syncAt(syncStatus);
-  let sync = null;
-  if (freshness === 'stale') {
-    // No "last update" clause when the stamp is in the future: ago() clamps a
-    // negative elapsed time to "0s", so under a backward clock jump the banner
-    // would read "NOT SYNCING — last update 0s ago", contradicting itself.
-    sync = html`<div class="glance-sync stale">⚠ NOT SYNCING${
-      at === null || now < at ? '' : ` — last update ${ago(now - at)}`
-    } · advice above may be stale</div>`;
-  } else if (freshness === 'fresh') {
-    // 'fresh' only means a poll COMPLETED recently — it is returned for a
-    // failing API too, and status.error was previously reported only by the top
-    // bar's SyncStatus, which Task 3 stopped rendering in this view. Without
-    // this branch a responding-but-failing Sleeper API shows a green "synced"
-    // dot here and says nothing anywhere else.
-    sync = syncStatus.ok
-      ? html`<div class="glance-sync"><span class="sync-dot ok"></span>${' '}synced ${ago(now - at)}</div>`
-      : html`<div class="glance-sync"><span class="sync-dot error"></span>${' '}Sleeper sync error: ${syncStatus.error}</div>`;
-  }
-
-  return html`<div class="glance-card">
+  return html`<${Card} sync=${sync}>
     <${Suggestion} label="TAKE" entry=${take} />
     ${then.length ? html`<div class="glance-then">
       ${then.map((e) => html`<${Suggestion} key=${e.player.id} label="THEN" entry=${e} />`)}
@@ -133,6 +153,5 @@ export function GlanceView({ syncStatus }) {
         : 'All starting spots filled.'}
     </div>
     ${countdown}
-    ${sync}
-  </div>`;
+  <//>`;
 }
