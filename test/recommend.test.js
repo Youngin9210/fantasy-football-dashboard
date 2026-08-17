@@ -567,13 +567,28 @@ test('bye 0 is a real week, and NO_SUCH_WEEK never collides with it', () => {
 
 test('the avoidable shortfall never exceeds the actual one, over a full sweep', () => {
   // The invariant behind both the `actual === 0` short circuit and the Math.max
-  // clamp in avoidableByeShortfall: a bye nobody holds can never be WORSE than a
-  // real one, so actual - floor is never negative and both guards are currently
-  // unreachable. Mutating either one away therefore changes nothing observable —
-  // they are defence for a future change to byeShortfall, and this sweep is what
-  // would catch such a change instead of a silently negative badge count.
+  // clamp in avoidableByeShortfall: a bye nobody holds is normally no WORSE than
+  // a real one, so actual - floor is normally not negative.
+  //
+  // "Normally" is the whole point of the negative rosters below. That argument
+  // holds for every input THIS APP can produce, because a negative bye week is
+  // unrepresentable here (cleanBye in js/csv.js matches /\d+/, and
+  // pickToManualPlayer sets null) — but the sentinel NO_SUCH_WEEK is -1, so a
+  // roster of -1s is a roster of players holding the sentinel week, and the
+  // floor stops being a floor:
+  //
+  //   byeShortfall( 7, [-1,-1,-1], 2) = 1   (actual)
+  //   byeShortfall(-1, [-1,-1,-1], 2) = 2   (floor)
+  //   actual - floor = -1                   -> the Math.max clamp fires
+  //
+  // So over the function's own input domain the clamp is REACHABLE, and deleting
+  // it makes the `avoidable >= 0` assertion below fail rather than changing
+  // nothing observable. (The two guards only substitute for each other one at a
+  // time: dropping the short circuit alone leaves the clamp to catch this;
+  // dropping both returns a negative badge count.)
   const byes = [null, 0, 1, 7, 10, 12];
-  const rosters = [[], [7], [7, 7], [7, 10], [null], [0, 7], [7, 7, 10], [null, 7]];
+  const rosters = [[], [7], [7, 7], [7, 10], [null], [0, 7], [7, 7, 10], [null, 7],
+    [-1], [-1, -1, -1]];
   let sawPositive = false;
   for (const cand of byes) {
     for (const roster of rosters) {
