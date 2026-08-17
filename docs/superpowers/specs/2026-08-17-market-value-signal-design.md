@@ -174,7 +174,7 @@ carries the information.
 | Value is `-` or empty | `null` |
 | Value is `0` | a real value — "drafted exactly on rank" — not missing |
 | Sleeper-synced player absent from the CSV | `null`, like `bye` |
-| Gap below threshold | bare number on the Board, nothing on Glance |
+| Gap below threshold | same wording on the Board but unstyled, nothing on Glance |
 
 Deliberately no "this CSV has no market data" notice, unlike the bye case. The
 bye notice exists because bye weighting silently affects the *score*; this
