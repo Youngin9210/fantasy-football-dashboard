@@ -259,9 +259,21 @@ table {
 }
 
 /* Layout */
+/* minmax(0, 1fr), not 1fr. `1fr` is minmax(auto, 1fr), and a track whose MIN
+   sizing function is `auto` gives its grid item a content-based automatic
+   minimum size (CSS Grid §6.6) -- so .panel could not shrink below the
+   9-column table's min-content (~619px) and the track inflated with it. At
+   390x844 that laid the page out 634px wide inside a 390px viewport: the
+   horizontal scroll landed on the DOCUMENT, .table-wrap's overflow:auto never
+   engaged (scrollWidth === clientWidth === 619), the Why column was 109px
+   off-screen and the Draft/✕ buttons 242px, and panning right to reach one
+   pushed the sticky top bar off the left edge (sticky protects nothing
+   horizontally). Naming 0 as the min sizing function makes the item's automatic
+   minimum size zero, so the track clamps to the viewport and .table-wrap owns
+   the sideways scroll it was always meant to own. */
 .layout {
   display: grid;
-  grid-template-columns: 1fr 340px;
+  grid-template-columns: minmax(0, 1fr) 340px;
   gap: 12px;
   padding: 12px;
   align-items: start;
@@ -269,7 +281,9 @@ table {
 
 @media (max-width: 900px) {
   .layout {
-    grid-template-columns: 1fr;
+    /* Same reasoning as above: collapsing to one track does not help if that
+       track is still floored at the table's min-content. */
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -579,12 +593,26 @@ table.players tr.limit-divider td {
    FLEX slot, an IDP label (LB/DL/DB) out of an IDP CSV, or any custom roster
    label the user types in Setup would be white text on a transparent
    background over a near-white card — measured at 1.03:1. Invisible.
-   Scoped to the whole .glance-card, not just .glance-needs: the TAKE and THEN
-   lines badge p.pos too, and the original .glance-needs scope left them
-   unreadable. :where() keeps the selector at zero specificity so the
-   per-position colours still win, and .glance-card exists only in the Glance
-   view, so the board's own .needs-row badges are untouched. */
-.glance-card .pos-badge:where(:not(.QB):not(.RB):not(.WR):not(.TE):not(.DST):not(.DEF):not(.K)) {
+   :where() keeps the selector at zero specificity so the per-position colours
+   still win.
+
+   UNSCOPED on purpose. This rule used to be prefixed `.glance-card `, on the
+   reasoning that the Board's own badges were fine — they are not. `.glance-card`
+   exists only in the Glance view, so the Board's `.needs-row` and
+   `table.players` never saw the fallback, and FLEX is the COMMON case there: the
+   default roster shape has a FLEX slot, so an owner who has not filled it sees
+   an invisible chip in the roster panel's "Needs:" row on every load. Measured
+   in the light theme, .needs-row FLEX before/after: 1.03:1 -> 10.99:1. The dark
+   theme masked the bug at 17.42:1, as bare white text with no badge shape, which
+   is why it survived: it is invisible only to someone developing in light mode,
+   and shapeless only to someone developing in dark.
+
+   Dropping the prefix lowers this rule's specificity from (0,2,0) to (0,1,0),
+   which cannot change any of the six standard badges: `.pos-badge.QB` and
+   friends are (0,2,0) and, more decisively, the :where() exclusion list means
+   this selector does not match them at all. Verified byte-identical for
+   QB/RB/WR/TE/DST/DEF/K in both themes. */
+.pos-badge:where(:not(.QB):not(.RB):not(.WR):not(.TE):not(.DST):not(.DEF):not(.K)) {
   background: var(--baseline);
   color: var(--text-primary);
 }
@@ -637,4 +665,84 @@ table.players tr.limit-divider td {
   padding: 1px 6px;
   border-radius: 4px;
   margin-top: 3px;
+}
+
+/* --- Phone top bar (blocker 2) --- */
+/* .topbar is a nowrap flex row whose inflexible children total ~546px at 390px
+   (.brand 152 nowrap + .sync-status 101 nowrap + .topbar-actions 213 + 3x16
+   gaps + 32 padding). .clock-widget is its only flex:1 child, so it absorbed
+   the whole deficit and computed to 0px wide: both .clock-pill children
+   rendered as blank 26x30 lozenges (24px content box against scrollWidths of
+   238px and 162px -- not even .clock-pill's ellipsis fits), overflowed their
+   zero-width parent, and were overprinted by #syncStatus by 10px and 26px.
+   "N picks until your turn" exists ONLY here, so on a phone the Board simply
+   did not show the most time-critical number in the app. The same overflow put
+   #settingsBtn -- the only route to CSV import and team selection, and the
+   control all six degraded Glance states point at -- at x 478..530, 0% visible.
+
+   Letting the row wrap is the whole fix: .clock-widget takes a full-width line
+   of its own (flex-basis: 100% is what forces the break; without it the pills
+   would merely wrap alongside the buttons and stay narrow) and everything else
+   fits its line. min-width: 0 on .clock-pill keeps its ellipsis reachable if a
+   very long team name still overruns the line, instead of the flex minimum
+   pinning it wide.
+
+   Scoped to a max-width the desktop layout never reaches, and expressed only as
+   overrides of the four properties involved, so the >=561px rendering is
+   byte-identical to before.
+
+   The :empty pair is the cost of the wrap, not decoration: TopBar renders empty
+   <div class="clock-widget"> and <div class="sync-status"> placeholders in the
+   Glance view (they exist to hold the flex column so the buttons do not jump on
+   toggle -- see TopBar.js). Once the row wraps, a full-width empty .clock-widget
+   claims an entire zero-height line plus two 16px row gaps, adding ~32px of dead
+   space to the top of every phone Glance screen. Nothing needs holding open on a
+   line of its own, so an empty one is removed. */
+@media (max-width: 560px) {
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .clock-widget {
+    flex-basis: 100%;
+    /* A full-width row is still not enough for BOTH pills: they need 238px and
+       162px plus a 10px gap = 410px against 358px of content box at 390px, so
+       on one line they shrink to 204px and 140px and .clock-pill's
+       text-overflow: ellipsis eats the end of each -- including the team that
+       is on the clock. Wrapping is adaptive: the pills share a line wherever
+       they fit and take one each only when they do not. */
+    flex-wrap: wrap;
+  }
+
+  .clock-pill {
+    min-width: 0;
+  }
+
+  .clock-widget:empty,
+  .sync-status:empty {
+    display: none;
+  }
+}
+
+/* --- Board sync dot: stale state (blocker 4) --- */
+/* The top bar's counterpart to .glance-sync.stale, and deliberately the same
+   idiom: amber background, fixed dark ink. --status-warning is the SAME amber in
+   both the :root and :root[data-theme="light"] blocks, so a theme-flipping
+   foreground would fail one of them (--page inverts to near-white, --text-primary
+   to white) -- exactly the trap .glance-sync.stale and .why-badge.bye already
+   document. Measured 10.73:1 in both themes, matching them.
+
+   .sync-status's own `color: var(--text-muted)` has to be overridden here or the
+   warning would render 3.4:1 grey on amber. Everything else about the element --
+   12px, flex, nowrap -- is inherited unchanged, so this is a paint change that
+   moves nothing.
+
+   Narrower than the Glance banner on purpose: no bottom margin (it is a flex
+   child of a row, not a block in a card) and no border-radius growth. */
+.sync-status.stale {
+  color: #0b0b0b;
+  background: var(--status-warning);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
 }

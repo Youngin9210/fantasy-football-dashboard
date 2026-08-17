@@ -2,6 +2,8 @@ import { html } from '../vendor/preact.js';
 import { pickToSlotIndex, pickToRound, nextPickForSlot } from '../draft.js';
 import * as St from '../state.js';
 import { useStore } from './useStore.js';
+import { useHeartbeat } from './useHeartbeat.js';
+import { syncFreshness } from './glance.js';
 
 function ClockWidget() {
   const { settings, teams, pickCounter } = useStore();
@@ -36,9 +38,52 @@ function ClockWidget() {
   </div>`;
 }
 
+// The Board's sync dot. It used to read ONLY `status.ok`, which useSleeperSync
+// seeds `{ ok: true, error: null }` before a single poll has been attempted — so
+// this rendered a green "Sleeper synced" at t=0 with no evidence whatever, and
+// still at t=30s with zero completed polls, while GlanceView on the identical
+// status object correctly read "⚠ NOT SYNCING". Two views contradicting each
+// other is worse than either alone: it teaches the owner that the amber banner
+// is noise, in the one situation where the board has silently stopped marking
+// players off and every recommendation is being computed against a stale board.
+//
+// `status.ok` cannot answer this question — it distinguishes "the last poll
+// failed" from "the last poll succeeded" and says nothing about whether a poll
+// ever COMPLETED, which is the failure a hung request produces. syncFreshness
+// (js/ui/glance.js) is the one place that judgement lives; it is unit-tested,
+// and routing both views through it is what makes them agree by construction
+// rather than by two authors happening to word it the same way.
 function SyncStatus({ status }) {
   const { settings } = useStore();
-  if (!settings.sleeperSyncEnabled) return html`<div class="sync-status" id="syncStatus"></div>`;
+  const enabled = !!settings.sleeperSyncEnabled;
+  // Above every early return, and unconditional: syncFreshness needs a `now`
+  // that advances or the dot can never go stale after mount, and nothing else on
+  // this page re-renders on a timer. Deliberately NOT sampled into state — the
+  // clock is read at render time on the next line, for the reason spelled out in
+  // useHeartbeat.js (a `now` up to a second old makes syncFreshness's
+  // negative-age skew check misfire right after every successful poll).
+  useHeartbeat(enabled);
+  const freshness = syncFreshness(status, enabled, Date.now());
+
+  // 'off' — sync disabled. Nothing to be healthy, so nothing is claimed. Keeping
+  // the empty div preserves the flex column the top bar's layout depends on.
+  if (freshness === 'off') return html`<div class="sync-status" id="syncStatus"></div>`;
+  // 'stale' — no poll has completed inside STALE_AFTER_MS, or there is no
+  // timestamp at all, or it is in the future. Worded and coloured to match the
+  // Glance card's stale banner (⚠ plus the --status-warning amber) so the two
+  // views read as one signal, but without Glance's "last update Ns ago · advice
+  // above may be stale" tail: this sits in a top bar whose other text is 12px
+  // nowrap, and a clause whose width changes every second would reflow the row
+  // it shares. The dot is dropped rather than given a third colour — ⚠ on amber
+  // is the established idiom here (.glance-sync.stale, .why-badge.bye,
+  // tr.need-notice) and an 8px dot cannot carry a distinction the banner already
+  // makes unmissable.
+  if (freshness === 'stale') {
+    return html`<div class="sync-status stale" id="syncStatus">⚠ NOT SYNCING</div>`;
+  }
+  // 'fresh' — a poll completed recently. That includes a responding-but-FAILING
+  // API, which is a different problem and still has to be named, hence the
+  // status.ok arm.
   return html`<div class="sync-status" id="syncStatus">
     <span class="sync-dot ${status.ok ? 'ok' : 'error'}"></span>
     <span>${status.ok ? 'Sleeper synced' : `Sleeper sync error: ${status.error}`}</span>
