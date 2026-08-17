@@ -94,6 +94,23 @@ RB's two dedicated slots, so a fresh bye yields 0 and a doubled one yields 1.
 The simplification's cost is that a genuine FLEX-only bye hole is not detected —
 accepted, and recorded here rather than discovered later.
 
+### With exactly as many bodies as slots, every bye is a shortfall
+
+A property worth stating because it looks like a bug and is not. When a position
+has N starting slots and exactly N rostered players, `required` equals `total`, so
+*any* bye week leaves that week short — spreading the byes does not help until an
+N+1th body exists. Two WRs against two WR slots score a shortfall of 2 whether
+they share a bye or not.
+
+This is correct: with no depth, every bye week genuinely costs you a starter. But
+the consequence is that mid-draft the penalty is often uniform across candidates
+at an unfilled position, so it does not differentiate between them — much like
+the K/DST case below. It begins discriminating once a position has more bodies
+than slots, which is also when spreading byes becomes an actual choice.
+
+Verified arithmetically while writing the plan; three test fixtures drafted by
+eye were wrong about it.
+
 ### K and DST carry a permanent `+6`
 
 You roster one of each, so `min(1, 1) = 1` and their own bye week is always a
