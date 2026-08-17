@@ -56,8 +56,14 @@ total        = rosteredAtPosition + 1        (including the candidate)
 available(W) = total − (how many of them have bye W)
 required     = min(startersNeeded, total)
 shortfall(W) = max(0, required − available(W))
-byeShortfall = Σ shortfall(W) over all distinct W
+byeShortfall = MAX shortfall(W) over all distinct W
 ```
+
+**Revised 2026-08-17: the aggregate is the MAX, not the sum.** The original `Σ`
+is why the failure in the Problem section above survived the feature built to
+prevent it — see "What the peak measures" below. `byeShortfall` answers "in your
+worst bye week, how many starters at this position can you not field?", not "how
+many starter-weeks do you lose across the season".
 
 ### `required` is capped at what is actually rostered
 
@@ -65,14 +71,17 @@ Without `min(startersNeeded, total)` the metric fires constantly early in the
 draft: one RB against two RB slots is "short" in every week regardless of byes.
 The cap makes it measure *bye-caused* shortfall only. Verified behavior:
 
-| Rostered at RB (2 starters needed) | Candidate | Shortfall-weeks |
+| Rostered at RB (2 starters needed) | Candidate | Peak shortfall |
 | --- | --- | --- |
 | none | RB bye 7 | 1 — unavoidable; no bye differentiates a first RB |
 | bye 7, bye 10 | RB bye 12 | 0 — fully covered |
 | bye 7, bye 10 | RB bye 7 | 1 — doubling up costs |
-| bye 7 | RB bye 7 | 2 — both starters out together |
+| bye 7 | RB bye 11 | 1 — no depth; the worst week still loses a starter |
+| bye 7 | RB bye 7 | 2 — both starters out together, and 1 above the row above |
 
-So it prefers spreading byes and goes quiet once depth exists.
+So it prefers spreading byes and goes quiet once depth exists. The last two rows
+are the pair that matters and the pair a summed shortfall could not tell apart:
+both summed to 2, and both therefore cancelled against the same floor.
 
 ### Weight: `BYE_PENALTY = 6`
 
@@ -127,31 +136,59 @@ RB's two dedicated slots, so a fresh bye yields 0 and a doubled one yields 1.
 The simplification's cost is that a genuine FLEX-only bye hole is not detected —
 accepted, and recorded here rather than discovered later.
 
-### With exactly as many bodies as slots, every bye is a shortfall
+### What the peak measures, and what the sum missed
 
-A property worth stating because it looks like a bug and is not. When a position
-has N starting slots and exactly N rostered players, `required` equals `total`, so
-*any* bye week leaves that week short — spreading the byes does not help until an
-N+1th body exists. Two WRs against two WR slots score a shortfall of 2 whether
-they share a bye or not.
+**Revised 2026-08-17.** This section previously stated that with exactly as many
+bodies as slots "spreading the byes does not help", that two WRs against two WR
+slots score a shortfall of 2 "whether they share a bye or not", and that the
+penalty is therefore *uniform* across candidates at an unfilled position. The
+first two were true only of the summed shortfall; the third is now wrong in a
+different way — at an unfilled position the penalty is **zero** unless the pick
+stacks a bye the position already holds. That blind spot is where the Problem
+section's own failure hid, so the section is rewritten rather than deleted.
 
-This is correct: with no depth, every bye week genuinely costs you a starter. But
-the consequence is that mid-draft the penalty is often uniform across candidates
-at an unfilled position, so it does not differentiate between them — much like
-the K/DST case below. It begins discriminating once a position has more bodies
-than slots, which is also when spreading byes becomes an actual choice.
+`byeShortfall` is the **peak weekly** shortfall: in the worst single bye week, how
+many of this position's starters can you not field? So with N slots and N bodies:
 
-Verified arithmetically while writing the plan; three test fixtures drafted by
-eye were wrong about it.
+- Byes **spread** (WR1 bye 7, WR2 bye 11): each of those weeks leaves one slot
+  uncovered. Peak 1.
+- Byes **shared** (both on bye 7): week 7 leaves *both* uncovered. Peak 2.
 
-### K and DST carry a permanent `+6`
+The `avoidableByeShortfall` floor — the same measure against a week nobody holds —
+is 1 in both cases, so the spread pick is charged 0 and the shared pick is charged
+1. That difference is the entire feature: with one RB rostered on bye 9 and the
+second RB slot still open, an RB on bye 9 is charged and badged and an RB on bye 6
+is not, so the dashboard no longer recommends the pick that puts your whole
+starting RB group out in the same week.
 
-You roster one of each, so `min(1, 1) = 1` and their own bye week is always a
-shortfall of 1. This is uniform across every kicker and every defense, so it
-never differentiates between them; its only effect is to slightly deepen the
-burial the K/DST hold-back rule already applies. Documented rather than
-special-cased, because suppressing it would mean treating those positions
-inconsistently with the rest of the model.
+It is still true that with no depth *some* shortfall is unavoidable — every N-body
+position loses a starter in every bye week its players hold. That residue is
+structural, it is identical for every candidate at the position, and the avoidable
+measure prices it at nothing. What is NOT structural, and is now priced, is
+*concentrating* those weeks on one date.
+
+Under the old `Σ` this section's claim was self-fulfilling: `[7,7]` and `[7,11]`
+both summed to 2, so shared and spread were literally the same number and
+detection could not begin until an N+1th body existed — after the position group
+was already stacked. Verified arithmetically both times; the first time, three
+test fixtures drafted by eye were wrong about it, and the second time the suite
+pinned the blind spot as an invariant.
+
+### K and DST carry nothing for their own bye week
+
+**Revised 2026-08-17.** This section said they carry a permanent `+6`. They do
+not, and the code is right: you roster one of each, so `min(1, 1) = 1` and a lone
+kicker's own bye week is a RAW shortfall of 1 — but the no-such-week floor is 1
+too, so the AVOIDABLE shortfall is 0 and a lone K is charged nothing and badged
+nothing. Pricing it would have been exactly the across-position distortion that
+"Revised 2026-08-17: the score charges only an AVOIDABLE shortfall" above
+describes: uniform among kickers, but a systematic tax on kickers relative to
+everyone else.
+
+Where a K or DST IS charged is a **second** body sharing the first one's bye: one
+slot, two bodies, one of them redundant in that week — raw 1, floor 0, avoidable 1.
+That is a genuine choice (any other bye covers the week), and it is the case the
+Problem section calls worst, since there is no third kicker to start.
 
 ## Missing bye data
 
@@ -169,11 +206,19 @@ Handling:
 - Null byes are excluded from the shortfall math — an unknown week cannot be
   reasoned about.
 - A candidate whose own bye is null takes no penalty.
-- **Case 2 must be visible.** When the owner has rostered players and not one of
-  them has a bye, the Glance card says so explicitly. Silently running a
-  weighting the user believes is active is the same failure class as the sync
-  indicator this project already had to build: confident output from data that
-  isn't there.
+- **Case 2 must be visible.** When nothing in the imported rankings carries a bye,
+  the Glance card says so explicitly. Silently running a weighting the user
+  believes is active is the same failure class as the sync indicator this project
+  already had to build: confident output from data that isn't there.
+
+  **Revised 2026-08-17: the condition is about the BOARD, not the roster.** It
+  originally read "when the owner has rostered players and not one of them has a
+  bye", and `hasNoByeData` gated on the roster to match. That made the message a
+  lie in one direction and silent in the other. Case 1 above is the lie: an owner
+  whose roster is nothing but unmatched Sleeper picks (all `bye: null`) — entirely
+  ordinary one pick into a synced draft — was told the weighting was off while it
+  was running normally for every candidate on the board. `hasNoByeData` therefore
+  requires the whole BOARD to lack byes, which is what the message claims.
 
 ## Surfacing
 
@@ -186,8 +231,9 @@ both, since the Board renders `reason` as a single badge today.
 - **Glance:** a line beneath TAKE. This is the more valuable placement, since
   Glance is where a decision gets made under a clock.
 
-`byeWarning` is `null` when there is no shortfall, so neither surface renders
-anything in the common case.
+`byeWarning` is `null` when there is no AVOIDABLE shortfall, so neither surface
+renders anything in the common case — and, since the score charges the same
+number, a badge is present on exactly the picks that are charged.
 
 ## Architecture
 
@@ -196,7 +242,10 @@ All of it lands in `js/recommend.js`, which is already pure and fully tested:
 ```
 byeShortfall(candidateBye, rosteredByes, startersNeeded) -> number
 BYE_PENALTY = 6                                             (named export, tunable)
-scorePlayer(...)  -> gains byeWarning, and byeShortfall folded into score
+avoidableByeShortfall(candidateBye, rosteredByes, startersNeeded) -> number
+                     (actual peak minus the no-such-week floor, clamped at 0)
+scorePlayer(...)  -> gains byeWarning, and avoidableByeShortfall folded into score
+                     -- ONE local drives both, so they cannot disagree
 rosterState(...)  -> gains per-position rostered byes so scorePlayer can see them
 ```
 
@@ -232,19 +281,24 @@ else is touched.
 
 `byeShortfall` is pure arithmetic and gets direct coverage:
 
-1. The four rows of the table above.
+1. Every row of the table above, including the stacked/spread pair that a summed
+   shortfall could not distinguish.
 2. A null candidate bye → 0, no penalty.
 3. An all-null rostered set → 0 (nothing knowable to conflict with).
 4. A mixed set where some rostered byes are null → nulls excluded, others count.
-5. Single-slot positions (K, DST) → own bye always yields 1.
+5. Single-slot positions (K, DST) → own bye always yields a RAW 1, and an
+   AVOIDABLE 0; a second body sharing that bye is avoidable 1.
 6. **One RB against two slots yields 1, not 2** — the case a naive
    implementation without the `min` cap gets wrong.
 7. Three rostered at a two-slot position, all sharing a bye → 2, not 3, because
    `required` caps at the slots, not the roster.
 
 Plus an integration assertion that `scorePlayer`'s returned `score` actually
-includes `BYE_PENALTY × shortfall`, since a pure function can be correct while
-being wired in wrong.
+includes `BYE_PENALTY × avoidableByeShortfall` — the same count the badge prints —
+since a pure function can be correct while being wired in wrong. And one on the
+headline case end to end: with one RB rostered on bye 9 and the second RB slot
+open, the RB who stacks bye 9 must be charged, badged, and sorted BELOW an RB a
+rank worse who spreads it. That case had no test, which is how it stayed silent.
 
 A calibration script printing one mid-draft board at bye penalties 3, 6, and 12
 — the same approach used to settle `STARTER_BONUS` — so the weight is confirmed
