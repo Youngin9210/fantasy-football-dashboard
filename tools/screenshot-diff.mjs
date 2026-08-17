@@ -465,7 +465,11 @@ async function main() {
     // identical by construction. That is a legitimate way to run this (nothing
     // uncommitted to check), but a screen of 0.0000% must not read as evidence
     // that the UI is intact -- only the sensitivity self-test measures anything.
-    const dirtyFiles = execSync('git status --porcelain', { cwd: ROOT }).toString().trim();
+    // Only files the browser actually loads count: an edit to README.md or to
+    // this script cannot move a pixel, so a run over one of those is every bit
+    // as trivial as a run over a clean tree and must say so too.
+    const dirtyFiles = execSync('git status --porcelain -- js css index.html',
+      { cwd: ROOT }).toString().trim();
     const sameCommit = execSync(`git rev-parse ${BASE_REF}`, { cwd: ROOT }).toString().trim()
       === execSync('git rev-parse HEAD', { cwd: ROOT }).toString().trim();
     trivial = sameCommit && !dirtyFiles;
@@ -548,8 +552,10 @@ async function main() {
           `  rows ${before.info.rows}/${after.info.rows}` +
           `  page height ${before.img.height}/${after.img.height}`);
         reportRegions(regionList);
+        const clicked = [before.info.viewSwitched && 'baseline', after.info.viewSwitched && 'head']
+          .filter(Boolean);
         console.log(`         view ${before.info.view}/${after.info.view}` +
-          ` (wanted ${sc.view}${after.info.viewSwitched ? ', reached by clicking the toggle' : ''})`);
+          ` (wanted ${sc.view}${clicked.length ? `, toggle clicked in ${clicked.join(' and ')}` : ''})`);
         console.log(`         element boxes: ${before.info.boxes.length}/${after.info.boxes.length},` +
           ` ${geom.moved.length} moved or resized by more than ${LAYOUT_TOLERANCE}px` +
           (geom.onlyA.length || geom.onlyB.length

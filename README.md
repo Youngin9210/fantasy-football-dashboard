@@ -1,10 +1,23 @@
 # Fantasy Football Draft Day Dashboard
 
-A single-page, no-build-step dashboard for tracking a live fantasy draft: best
-player available, your roster and needs, snake draft order, and (optionally)
-automatic pick syncing from a live Sleeper draft. Everything runs client-side
-— your draft state lives in your browser's `localStorage`, nothing is sent to
-any server except live polling of the public Sleeper API if you connect it.
+A single-page, no-build-step dashboard for tracking a live fantasy draft: one
+card telling you who to take next and why, plus the full board — best player
+available, your roster and needs, snake draft order — and (optionally) automatic
+pick syncing from a live Sleeper draft. Everything runs client-side — your draft
+state lives in your browser's `localStorage`, nothing is sent to any server
+except live polling of the public Sleeper API if you connect it.
+
+## What this is for
+
+Your league's site already has a draft board, a queue, a draft log, and a
+roster view. This does two things they don't: it ranks from *your* CSV, and it
+re-sorts by *your* open starting slots weighted against talent — including
+holding K and DEF back until you can no longer afford to wait.
+
+Glance exists so that fits on a phone beside whatever you're actually drafting
+in. Sleeper's API is read-only, and the big platforms' draft boards rank off
+their own consensus rather than a rankings file you hand them, so a second
+screen is the only way to get this without the platform's cooperation.
 
 ## Quick start
 
@@ -22,10 +35,14 @@ any server except live polling of the public Sleeper API if you connect it.
 5. Import your rankings under **Import Rankings (CSV)** — paste or upload a
    CSV (a FantasyPros "Player Rankings" export works out of the box; any CSV
    with `Rank`/`Player Name`/`Team`/`Pos`/`Bye Week` columns works too).
-6. Close Setup and draft. Click **Draft** next to a player to mark them
-   taken for whoever is on the clock (the "Draft pick for" dropdown
-   auto-advances through the snake order); click **✕** on a drafted row to
-   undo a specific pick, or **Undo Last Pick** to undo the most recent one.
+6. Close Setup. You land on **Glance**: the single card with the pick to make
+   and the reasoning behind it. Switch to **Board** (top right) any time you
+   need the full table.
+7. Mark picks. If Sleeper sync is on, that happens by itself. Otherwise switch
+   to **Board** and click **Draft** next to a player to mark them taken for
+   whoever is on the clock (the "Draft pick for" dropdown auto-advances through
+   the snake order); click **✕** on a drafted row to undo a specific pick, or
+   **Undo Last Pick** to undo the most recent one.
 
 Rankings intentionally aren't preloaded — fantasy rankings shift constantly,
 so pull a fresh CSV right before your draft rather than trusting anything
@@ -51,14 +68,15 @@ running.
    seconds and marks players off automatically, matching by name (and by
    team for defenses). Any pick it can't confidently match to your imported
    rankings is added as an "unranked" entry so your roster/team tracking
-   stays accurate — check the best-available list afterward if a name looks
-   off.
+   stays accurate — check the Board's best-available list afterward if a name
+   looks off.
 
-You can still use the manual **Draft** button at any time (e.g. for
+You can still use the Board's manual **Draft** button at any time (e.g. for
 corrections, or if you'd rather not connect Sleeper at all).
 
-**Correcting a bad name match while sync is running.** Click the ✕ on the
-wrongly-matched row, then **Draft** the player who really went there. The ✕
+**Correcting a bad name match while sync is running.** On the **Board**, click
+the ✕ on the wrongly-matched row, then **Draft** the player who really went
+there. The ✕
 tells the poller to leave that *player* alone for the rest of the session, so
 the next poll six seconds later won't put him straight back — and because it
 is keyed to the player rather than to the pick number, it never suppresses
@@ -88,6 +106,13 @@ progress if you close the tab mid-draft.
 
 ## What it does
 
+- **Glance** — the default view. One card: the player to take and why, two
+  backups, which starting slots are still open, how many picks until your turn,
+  and whether live sync is actually current. Built for a phone next to your
+  laptop while you draft on your league's own site.
+- **Board** — one tap away, and what you want for an in-person or non-Sleeper
+  draft: the full table with search, filters, and Draft buttons for marking
+  every pick by hand.
 - **Best Available** — full rankings table, filterable by position
   (including a combined FLEX filter) and searchable by name/team, with tier
   dividers when your CSV includes a tier column.
@@ -101,10 +126,12 @@ progress if you close the tab mid-draft.
   until you have only enough picks left to fill them, so you never spend an
   early pick on a kicker or finish the draft without a defense.
 - **My Team** — your roster slots filled in as you draft, with starting
-  lineup needs called out (bench slots accept anyone).
-- **On the clock** — shows whose pick it is and how many picks until your
-  next turn, computed from a standard snake order.
-- **Draft Log** — running list of every pick, newest first.
+  lineup needs called out (bench slots accept anyone). Lives in the Board's
+  sidebar; Glance boils it down to the STILL NEED line.
+- **On the clock** — the Board's top bar shows whose pick it is and how many
+  picks until your next turn, computed from a standard snake order; Glance shows
+  the same countdown on its card.
+- **Draft Log** — running list of every pick, newest first (Board).
 - **Light/dark theme** toggle (🌓, top right).
 
 ## What it deliberately doesn't do
@@ -136,6 +163,18 @@ Tests use the Node 22 built-in runner — no dependencies, no install step:
 node --test
 ```
 
+Anything that needs a real browser lives in `tools/`, not `test/`, so `node
+--test` stays fast and offline:
+
+```
+node tools/stale-check.mjs
+```
+
+drives headless Chrome against a Sleeper API stub whose second poll never
+returns, then waits out the real 20-second staleness threshold to prove the
+Glance card actually replaces "synced" with the NOT SYNCING warning. It takes
+about half a minute by design.
+
 `package.json` exists only to mark the source as ES modules for Node. The site
 itself still has no build step and no runtime dependencies.
 
@@ -150,11 +189,27 @@ tagged templates rather than JSX, since JSX would require a compiler.
 To check a UI change for unintended visual drift:
 
 ```
-node tools/screenshot-diff.mjs
+node tools/screenshot-diff.mjs                 # working tree vs HEAD
+node tools/screenshot-diff.mjs --ref main      # or any commit-ish
+SCREENSHOT_DIFF_REF=main node tools/screenshot-diff.mjs
 ```
 
-It screenshots this build and a `git worktree` of an earlier commit at a fixed
-viewport in both themes and diffs them pixel by pixel, reporting which element
-boxes moved. A DOM-structure harness (`tools/dom-diff.mjs`) existed alongside it
-during the Preact rewrite and was retired once that port was verified — it
-compared against a baseline that no longer exists on `main`.
+It screenshots this working tree and a `git worktree` of the baseline ref at a
+fixed viewport in both themes, then diffs them pixel by pixel — reporting how
+many pixels differ, where the largest differing regions are, and, separately,
+which element boxes actually moved. Run it before committing a UI change: the
+default baseline is `HEAD`, so it shows exactly what your edits moved. If the
+baseline turns out to be the same tree you are running against, the run says so
+instead of letting a screen of `0.0000%` look like proof.
+
+Each scenario declares which view it renders, and both sides must prove they
+rendered it before their pixels are compared. Every run also ends with a
+sensitivity self-test: two deliberate CSS overrides are injected, and the
+harness must catch one as a paint-only change and the other as a layout change.
+A comparison tool that has not just demonstrated it can see something is not
+evidence of anything.
+
+A DOM-structure harness (`tools/dom-diff.mjs`) existed alongside it during the
+Preact rewrite and was retired once that port merged: its baseline was `main`,
+which by then *was* the rewrite, so it had been diffing the new build against
+itself and reporting a vacuous pass.
