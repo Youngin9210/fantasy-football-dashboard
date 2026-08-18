@@ -4,6 +4,7 @@ import { rosterState, recommendOrder } from '../recommend.js';
 import { FLEX_ELIGIBLE } from '../positions.js';
 import { useStore } from './useStore.js';
 import { suppressPlayer } from './useSleeperSync.js';
+import { marketNote } from './market.js';
 
 const POSITIONS = ['ALL', 'QB', 'RB', 'WR', 'TE', 'FLEX', 'DST', 'K'];
 
@@ -41,6 +42,12 @@ function PlayerRow({ entry, teams, draftForId, tierStart }) {
     : '';
   const cls = [tierStart ? 'tier-start' : '', p.drafted ? 'drafted' : '', excluded ? 'limit-excluded' : '']
     .filter(Boolean).join(' ');
+  // The Value column. marketNote owns the wording AND the direction: it returns
+  // null when there is no gap to report (rank 400+ ships a literal "-"), and its
+  // `short` already names the direction in words ("10 early" / "11 late"), so the
+  // raw sign of p.ecrVsAdp is never printed. One column, one convention —
+  // flagged and unflagged rows read identically and only the emphasis differs.
+  const market = marketNote(p.ecrVsAdp);
 
   // The WHY cell carries up to two badges. The explicit ${' '} between them is
   // load-bearing: htm drops whitespace-only text nodes, so they would otherwise
@@ -53,7 +60,28 @@ function PlayerRow({ entry, teams, draftForId, tierStart }) {
     <td>${p.pos ? html`<span class="pos-badge ${p.pos}">${p.pos}</span>` : null}</td>
     <td class="player-meta">${p.team || ''}</td>
     <td class="player-meta">${p.bye ?? ''}</td>
-    <td class="player-meta">${p.adp ?? ''}</td>
+    <td class="player-meta">${market
+      // The class picks the emphasis, never the wording. It is only ever reached
+      // when market.flagged, i.e. |gap| >= 8, so the signed-zero hole in this
+      // comparison (`-0 < 0` is false, so a -0 would land in 'late') is
+      // unreachable: marketNote returns 'on rank', flagged:false, for -0. A
+      // future change that badges unflagged values must take the direction from
+      // marketNote rather than re-deriving it here.
+      //
+      // Unflagged text is wrapped in .market-plain rather than left as a bare
+      // string: .player-meta's own color (--text-muted) measures 3.50:1 on the
+      // light panel (--surface-1), below the 4.5:1 AA floor -- and unflagged is
+      // the common case (~78% of rows on the owner's own board), so most of the
+      // column would fail. .market-plain overrides to --text-secondary
+      // (7.73:1 light, 9.72:1 dark; recomputed via WCAG relative luminance, not
+      // assumed). Board-owner decision: fix this column only, not
+      // --text-muted/.player-meta stylesheet-wide, so Value now reads slightly
+      // darker than Team/Bye beside it -- intentional, it carries the new
+      // meaning.
+      ? (market.flagged
+          ? html`<span class="market-badge ${p.ecrVsAdp < 0 ? 'early' : 'late'}">${market.short}</span>`
+          : html`<span class="market-plain">${market.short}</span>`)
+      : ''}</td>
     <td>${reason ? html`<span class="why-badge ${whyClass(reason)}">${reason}</span>` : null}${
       byeWarning ? html`${' '}<span class="why-badge bye">${byeWarning}</span>` : null}</td>
     <td class="drafted-by">${p.drafted ? `#${p.pickNo} · ${teamName}` : ''}</td>
@@ -109,6 +137,11 @@ export function PlayersTable({ filter, search, onFilter, onSearch, draftForId, o
       draftForId=${draftForId} tierStart=${tierStart} />`);
   }
 
+  // The table is 9 columns and must stay 9: the limit divider above and the
+  // need notice below both use colspan="9". The market signal therefore REPLACES
+  // the old ADP header rather than adding a tenth column -- ADP is empty on every
+  // row of this CSV (FantasyPros ships the difference, not the raw figure), and
+  // this table only just stopped overflowing a phone viewport.
   return html`<section class="panel">
     <div class="controls">
       <input id="searchBox" placeholder="Search players…" value=${search}
@@ -134,7 +167,7 @@ export function PlayersTable({ filter, search, onFilter, onSearch, draftForId, o
       <table class="players">
         <thead><tr>
           <th>Rank</th><th>Player</th><th>Pos</th><th>Team</th>
-          <th>Bye</th><th>ADP</th><th>Why</th><th>Status</th><th></th>
+          <th>Bye</th><th>Value</th><th>Why</th><th>Status</th><th></th>
         </tr></thead>
         <tbody id="playersBody">
           ${useNeed && !settings.myTeamId

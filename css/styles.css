@@ -746,3 +746,52 @@ table.players tr.limit-divider td {
   border-radius: 4px;
   font-weight: 600;
 }
+
+/* --- The market signal (Board Value column + Glance line) --- */
+/* Emphasis only -- the DIRECTION is carried by the words ("10 early" / "11 late"),
+   never by colour alone, so this stays readable to a colour-blind owner and in a
+   screenshot. The raw sign is backwards from intuition (negative = drafted EARLIER
+   than ranked = he will be gone), which is exactly why no sign is ever painted.
+   Only `early` gets a colour: it is the urgent direction, and colouring both would
+   turn the column into a stripe of noise.
+   --surface-3, --text-primary, --text-secondary and --status-critical all exist in
+   BOTH the :root and :root[data-theme="light"] blocks (checked, not assumed), so no
+   var() here can resolve to nothing and compute as `unset`. --status-critical is
+   the SAME red #d03b3b in both, and white on it measures 4.80:1 -- above the 4.5:1
+   AA floor, so this keeps the theme-following #fff that .why-badge.limit already
+   uses on the same token rather than needing .why-badge.bye's fixed dark ink. */
+.market-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 5px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+/* .late intentionally has no rule -- only the urgent direction (early) gets
+   colour, per the comment above. `late` still ships on the element as a class
+   because it also serves as a browser-check hook; it is not a rule someone
+   deleted. */
+.market-badge.early { background: var(--status-critical); color: #fff; }
+
+.glance-pick-market {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+/* --- Fix wave follow-ups on the market signal (review pass) --- */
+/* .market-plain: the Value column's unflagged case (~78% of rows) used to be a
+   bare string in .player-meta, whose --text-muted measures 3.50:1 on the light
+   panel (--surface-1) -- below the 4.5:1 AA floor. This overrides to
+   --text-secondary, which measures 7.73:1 light / 9.72:1 dark (recomputed via
+   WCAG relative luminance). --text-secondary exists in BOTH the :root and
+   :root[data-theme="light"] blocks (checked above), so this cannot resolve to
+   `unset`. Owner decision: fix this column only, not --text-muted/.player-meta
+   stylesheet-wide -- Value is now slightly darker than Team/Bye beside it on
+   purpose, since it carries the new meaning. */
+.market-plain {
+  color: var(--text-secondary);
+}

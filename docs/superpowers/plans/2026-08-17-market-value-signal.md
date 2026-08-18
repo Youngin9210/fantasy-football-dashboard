@@ -114,7 +114,11 @@ test("the owner's real export parses as measured", async () => {
   assert.equal(noel.ecrVsAdp, 152);
   const jacobs = players.find((p) => p.name === 'Josh Jacobs');
   assert.equal(jacobs.ecrVsAdp, -10);
-  assert.equal(jacobs.bye, 8, 'bye still parses -- the new column must not shift the map');
+  // 11, verified against the file. An earlier draft of this plan asserted 8 --
+  // fabricated, not measured: only Jacobs' rank and gap were ever checked. Task
+  // 1's implementer hit the failure and generously attributed it to a refreshed
+  // download; the file's mtime proves it never changed.
+  assert.equal(jacobs.bye, 11, 'bye still parses -- the new column must not shift the map');
 });
 ```
 
@@ -375,6 +379,15 @@ and render:
 
 `p.adp` stops being displayed. It is still parsed and stored — do not remove it
 from `js/csv.js`.
+
+**A note on `-0`, from Task 1's review.** `Number("-0")` is `-0`, and `-0 < 0` is
+**false** — so the `early`/`late` class selector above would put a `-0` in the
+`late` bucket. It cannot actually surface: `marketNote` returns
+`{ short: 'on rank', flagged: false }` for `-0` (since `-0 === 0`), so no badge
+renders and the class is never applied. No real export has been seen with a
+signed zero. Recorded so a future change that badges unflagged values knows the
+branch is sign-fragile — prefer `marketNote`'s own direction over re-deriving it
+from the raw number.
 
 - [ ] **Step 3: Add the Glance line**
 
