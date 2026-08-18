@@ -135,6 +135,10 @@ function parseRankingsCsv(text) {
     warnings.push('No position column found — filtering by position (QB/RB/WR/TE/etc.) will not work until you add one.');
   }
 
+  if (colMap.ecrVsAdp === undefined) {
+    warnings.push('No market column found — the Value column and the Glance market line will stay blank until you add an "ECR VS. ADP" column.');
+  }
+
   // Re-rank sequentially if rank column was missing or unreliable, preserving CSV order.
   if (colMap.rank === undefined) {
     players.forEach((p, idx) => (p.rank = idx + 1));

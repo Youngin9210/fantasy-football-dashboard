@@ -1,11 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import { parseRankingsCsv } from '../js/csv.js';
 
 const H = 'RK,TIERS,PLAYER NAME,TEAM,POS,ECR VS. ADP';
 const row = (v) => `${H}\n1,1,Some Player,CIN,WR1,${v}`;
 const first = (csv) => parseRankingsCsv(csv).players[0];
+
+// A 51-row slice of the owner's actual FantasyPros export (RK1-50 plus RK224),
+// committed verbatim -- header quirks and all -- so this suite never again
+// depends on a file outside the repo. See test/fixtures/rankings-sample.csv
+// for provenance.
+const FIXTURE = fileURLToPath(new URL('./fixtures/rankings-sample.csv', import.meta.url));
 
 test('a positive gap parses, plus sign and all', () => {
   assert.equal(first(row('+152')).ecrVsAdp, 152);
@@ -45,10 +52,26 @@ test('a whitespace-padded value still parses', () => {
   assert.equal(first(row('\t-12\t')).ecrVsAdp, -12);
 });
 
-test('a CSV with no such column yields null, with no warning', () => {
+test('a CSV with no such column yields null AND now warns -- the owner overrode the spec here', () => {
+  // The spec's original call (see the old comment this replaces) was that a
+  // blank Value column is self-evident and not worth a warning. The owner
+  // overrode that decision post-review: on the live site a blank ADP column is
+  // the NORMAL state, so a blank Value column is genuinely ambiguous between
+  // "this file has no market data" and "the parse broke" -- only a warning
+  // tells the two apart. This assertion now pins the warning, not its absence.
   const { players, warnings } = parseRankingsCsv('RK,PLAYER NAME,POS\n1,Some Player,WR1');
   assert.equal(players[0].ecrVsAdp, null);
-  assert.equal(warnings.length, 0, 'an absent market column is not worth warning about');
+  assert.equal(warnings.length, 1, 'an absent market column now warns, by owner override');
+  assert.match(warnings[0], /market column/i);
+});
+
+test('a market column that is present but entirely dashes still warns nothing', () => {
+  // The new warning is for an ABSENT column only. 612 of the owner's 946 rows
+  // are "-"; a file that is fully populated with dashes is legitimate, not
+  // broken, and must stay silent.
+  const csv = 'RK,PLAYER NAME,POS,ECR VS. ADP\n1,Some Player,WR1,-\n2,Other Player,RB1,-';
+  const { warnings } = parseRankingsCsv(csv);
+  assert.equal(warnings.length, 0);
 });
 
 test('the header alias tolerates spacing and case', () => {
@@ -58,25 +81,36 @@ test('the header alias tolerates spacing and case', () => {
   }
 });
 
-test("the owner's real export parses as measured", async () => {
-  const text = await readFile('/Users/kyleyoung/Downloads/FantasyPros_2026_Draft_ALL_Rankings (1).csv', 'utf8');
+test('adp still parses when a genuine ADP column is present', () => {
+  // Not exercised anywhere else in this suite. Also guards against the new
+  // column shifting the map: ecrVsAdp must still land correctly alongside it.
+  const csv = 'RK,PLAYER NAME,POS,ADP,ECR VS. ADP\n1,Some Player,WR1,23.4,-16';
+  const p = parseRankingsCsv(csv).players[0];
+  assert.equal(p.adp, 23.4);
+  assert.equal(p.ecrVsAdp, -16, 'adding an ADP column must not shift the ecrVsAdp column');
+});
+
+test("a real export slice parses as measured (fixture, not the owner's Downloads folder)", async () => {
+  const text = await readFile(FIXTURE, 'utf8');
   const { players } = parseRankingsCsv(text);
-  assert.equal(players.length, 946);
+  assert.equal(players.length, 51);
   const withValue = players.filter((p) => Number.isFinite(p.ecrVsAdp));
-  assert.equal(withValue.length, 334, '334 rows carry a number; the other 612 are "-"');
+  assert.equal(withValue.length, 50, '50 rows carry a number; Oscar Delp is the fixture\'s one "-"');
   // Fully populated exactly where drafting happens.
-  const top150 = players.filter((p) => p.rank <= 150);
-  assert.equal(top150.filter((p) => Number.isFinite(p.ecrVsAdp)).length, 150);
+  const top50 = players.filter((p) => p.rank <= 50);
+  assert.equal(top50.filter((p) => Number.isFinite(p.ecrVsAdp)).length, 50);
   // Spot-check both extremes and a bye, so a column-order regression is caught.
-  const noel = players.find((p) => p.name === 'Jaylin Noel');
-  assert.equal(noel.ecrVsAdp, 152);
+  const gibbs = players.find((p) => p.name === 'Jahmyr Gibbs');
+  assert.equal(gibbs.ecrVsAdp, 0, 'RK1, drafted right on rank -- zero is real, not missing');
+  const hall = players.find((p) => p.name === 'Breece Hall');
+  assert.equal(hall.ecrVsAdp, -2);
+  const mcconkey = players.find((p) => p.name === 'Ladd McConkey');
+  assert.equal(mcconkey.ecrVsAdp, 3);
+  const mclaurin = players.find((p) => p.name === 'Terry McLaurin');
+  assert.equal(mclaurin.ecrVsAdp, 11);
   const jacobs = players.find((p) => p.name === 'Josh Jacobs');
   assert.equal(jacobs.ecrVsAdp, -10);
-  // The brief's snapshot measured bye 8; the owner's current download has since been
-  // refreshed (Jacobs now shows team GB, bye 11). That's upstream data drift, not a
-  // parser defect -- confirmed by reading the raw row directly: the "BYE WEEK" column
-  // holds "11". The assertion's real job -- proving the new ecrVsAdp column didn't
-  // shift the column map -- still holds: bye parses to a plausible integer, not null
-  // or garbage.
   assert.equal(jacobs.bye, 11, 'bye still parses -- the new column must not shift the map');
+  const delp = players.find((p) => p.name === 'Oscar Delp');
+  assert.equal(delp.ecrVsAdp, null, 'a literal "-" is missing, not zero');
 });
