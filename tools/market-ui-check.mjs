@@ -33,6 +33,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   serve, launchChrome, Page, STORAGE_KEY, THEME_KEY, CONTRAST_SOURCE,
+  SPOTS, TEAMS as BASE_TEAMS,
 } from './harness.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -45,6 +46,18 @@ const THEMES = ['dark', 'light'];
 // light panel — ~78% of the column below AA. `.market-plain` was appended to fix
 // exactly that, so removing it must fail here.
 const MIN_CONTRAST = 4.5;
+
+// --status-critical is #d03b3b in BOTH :root and :root[data-theme="light"]
+// (css/styles.css:17,46), i.e. rgb(208, 59, 59) in both themes -- checked, not
+// assumed, since a token that only existed in one theme would make this a
+// theme-specific assertion by accident. This is the design's other central
+// claim, distinct from the wording sweep: only `early` is coloured, and it is
+// coloured THIS red. Deleting `.market-badge.early { background: ... }`
+// (css/styles.css:777) leaves the badge on the base `.market-badge` rule --
+// grey, same padding, same size, and actually HIGHER contrast than the red --
+// so nothing else in this file notices. See the two checks right after #2
+// below.
+const CRITICAL_RED = 'rgb(208, 59, 59)';
 
 // The owner's real export, handed to the app's own #csvFile through CDP
 // DOM.setFileInputFiles and imported with the app's own button. Not a synthetic
@@ -89,13 +102,12 @@ const PHONE = { width: 390, height: 844, table: 615, wrapScroll: 251, tol: 4 };
 
 const DESKTOP = { width: 1440, height: 900 };
 
-// League shape. Only the league and (where a fixture needs it) draft PROGRESS is
-// seeded; every player datum comes from the CSV import.
-const SPOTS = ['QB', 'RB', 'RB', 'WR', 'WR', 'TE', 'FLEX', 'K', 'DST',
-  'BN', 'BN', 'BN', 'BN', 'BN', 'BN', 'BN'];
-const TEAMS = Array.from({ length: 10 }, (_, i) => ({
-  id: `t${i}`, name: `Team ${i + 1}`, slot: i, rosterId: i + 1, userId: null, isMe: i === 0,
-}));
+// League shape, shared with the other harnesses via harness.mjs (SPOTS, TEAMS)
+// rather than a second copy that could drift. This file's fixtures need a
+// team of MINE to seed sortMode: 'need', so isMe is remapped onto index 0 here
+// -- harness.mjs's own TEAMS export stays isMe: false, which is what
+// bye-ui-check.mjs and screenshot-diff.mjs already get through it.
+const TEAMS = BASE_TEAMS.map((t, i) => ({ ...t, isMe: i === 0 }));
 
 // ---------------------------------------------------------------- test harness
 
@@ -103,6 +115,22 @@ let failures = 0;
 function check(label, ok, detail) {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok || !detail ? '' : ` -> ${detail}`}`);
   if (!ok) failures += 1;
+}
+
+// Raised when the CSV-fixture assertions (the ones that run BEFORE anything is
+// rendered) find the imported board does not match what this file is pinned
+// against. Caught once, outside the try/finally below, so the browser and temp
+// profile still get cleaned up before the process exits.
+class CsvFixtureMismatch extends Error {}
+
+// Wraps check() for exactly the CSV-fixture assertions: same PASS/FAIL line,
+// but failures are also collected so the run can stop with one actionable
+// message instead of cascading into ~50 downstream failures whose real cause
+// (a re-exported CSV) is buried at the top of a long FAIL list.
+const fixtureFailures = [];
+function checkFixture(label, ok, detail) {
+  check(label, ok, detail);
+  if (!ok) fixtureFailures.push(detail ? `${label} -> ${detail}` : label);
 }
 
 // ------------------------------------------------------------- in-page helpers
@@ -145,6 +173,7 @@ function cellInfo(name) {
     kids: td ? td.childElementCount : null,
     badge: badge ? badge.className : null,
     badgeContrast: badge ? contrast(badge) : null,
+    badgeBg: badge ? getComputedStyle(badge).backgroundColor : null,
     plain: !!plain,
     plainContrast: plain ? contrast(plain) : null,
   };
@@ -196,11 +225,13 @@ function glanceInfo() {
     const first = el.firstChild;
     return first && first.nodeType === 3 ? first.textContent.trim() : el.textContent.trim();
   };
+  // entry.byeWarning deliberately still renders on both TAKE and THEN -- that
+  // is NOT this file's concern, so .glance-pick-bye is intentionally not
+  // collected here; nothing pins it absent.
   const read = (p) => ({
     label: (p.querySelector('.glance-pick-label') || {}).textContent,
     name: nameOf(p),
     market: [...p.querySelectorAll('.glance-pick-market')].map((el) => el.textContent.trim()),
-    bye: [...p.querySelectorAll('.glance-pick-bye')].map((el) => el.textContent.trim()),
   });
   const all = [...document.querySelectorAll('.glance-pick-market')];
   const card = document.querySelector('.glance-card');
@@ -313,6 +344,10 @@ const profile = mkdtempSync(join(tmpdir(), 'market-ui-chrome-'));
 let server;
 let chrome;
 let page;
+// Outer try/catch is only for CsvFixtureMismatch: it lets the inner
+// try/finally close the browser and the temp profile before exiting, instead
+// of process.exit() cutting the run off mid-cleanup.
+try {
 try {
   server = await serve(ROOT);
   chrome = await launchChrome(profile);
@@ -328,16 +363,18 @@ try {
   const PLAYERS = imported.players;
   const byName = (n) => PLAYERS.find((p) => p.name === n);
 
-  check(`the owner's CSV imported through the app's own #csvFile (${EXPECT_PLAYERS} players)`,
+  checkFixture(`the owner's CSV imported through the app's own #csvFile (${EXPECT_PLAYERS} players)`,
     PLAYERS.length === EXPECT_PLAYERS, `saw ${PLAYERS.length}`);
 
   // Fixture sanity BEFORE anything is rendered: every row this file locates by
   // name must exist in the imported board with the gap the assertions assume.
   // Without this, a re-exported CSV would leave the checks below quietly
-  // measuring the wrong thing.
+  // measuring the wrong thing. These, plus the QB count and "players above
+  // McLaurin" count below, are the 8 CSV-fixture assertions the gate right
+  // after them depends on.
   for (const e of [EARLY, LATE, PLAIN_EARLY, PLAIN_LATE, NO_DATA]) {
     const p = byName(e.name);
-    check(`fixture: ${e.name} is rank ${e.rank} with gap ${J(e.gap)} in the imported board`,
+    checkFixture(`fixture: ${e.name} is rank ${e.rank} with gap ${J(e.gap)} in the imported board`,
       !!p && p.rank === e.rank && (p.ecrVsAdp ?? null) === e.gap,
       p ? `rank=${p.rank}, ecrVsAdp=${J(p.ecrVsAdp ?? null)}` : 'not in the board');
   }
@@ -358,11 +395,16 @@ try {
     ...imported,
     settings: settings(over.settings || {}),
     teams: TEAMS,
-    players: over.players || PLAYERS,
+    // `!== undefined`, not `||`: an explicitly-empty `players: []` must stay
+    // empty rather than silently falling back to the full 946-row board. No
+    // caller passes `[]` today, but a future fixture that does should not land
+    // in a vacuity trap.
+    players: over.players !== undefined ? over.players : PLAYERS,
     picks: over.picks || [],
     pickCounter: over.pickCounter || 0,
   });
 
+  const byId = (id) => PLAYERS.find((p) => p.id === id);
   const drafted = (p, teamId, pickNo) => ({
     ...p, drafted: true, draftedByTeamId: teamId, pickNo,
   });
@@ -374,10 +416,20 @@ try {
       const i = order.indexOf(p.id);
       return i < 0 ? p : drafted(p, `t${(i % 9) + 1}`, i + 1);
     });
-    const picks = order.map((id, i) => ({
-      pickNo: i + 1, round: Math.floor(i / 10) + 1, teamId: `t${(i % 9) + 1}`,
-      playerId: id, rawName: (byName(PLAYERS.find((p) => p.id === id).name) || {}).name,
-    }));
+    const missing = [];
+    const picks = order.map((id, i) => {
+      const p = byId(id);
+      if (!p) missing.push(id);
+      return {
+        pickNo: i + 1, round: Math.floor(i / 10) + 1, teamId: `t${(i % 9) + 1}`,
+        playerId: id, rawName: p ? p.name : null,
+      };
+    });
+    // A missing id here is a fixture bug, not a CSV difference -- but a named
+    // failure beats a thrown TypeError from `.name` on undefined. One
+    // aggregate check rather than one per id, so a clean run stays quiet.
+    check(`fixture: draftAwayIds found a player for every one of its ${order.length} ids`,
+      missing.length === 0, `${missing.length} missing: ${J(missing)}`);
     return { players, picks, pickCounter: order.length };
   }
 
@@ -399,7 +451,7 @@ try {
   const QBS = PLAYERS.filter((p) => p.pos === 'QB')
     .sort((a, b) => (a.rank ?? Infinity) - (b.rank ?? Infinity));
   const MINE_QB = QBS.slice(0, 3);
-  check(`fixture: the board has ${MINE_QB.length + 1}+ QBs, so 3 drafted still leaves one undrafted`,
+  checkFixture(`fixture: the board has ${MINE_QB.length + 1}+ QBs, so 3 drafted still leaves one undrafted`,
     QBS.length > 3, `${QBS.length} QB(s)`);
   const LIMIT = fixture({
     settings: { sortMode: 'need', myTeamId: 't0', positionLimits: { QB: 3, RB: 6, WR: 6, TE: 3, K: 2, DST: 3 } },
@@ -417,8 +469,25 @@ try {
   // best remaining player at an open starting slot and the two THEN entries are
   // the ranks right behind him.
   const above = PLAYERS.filter((p) => p.rank != null && p.rank < LATE.rank);
-  check(`fixture: ${above.length} players rank above ${LATE.name} and are drafted away`,
+  checkFixture(`fixture: ${above.length} players rank above ${LATE.name} and are drafted away`,
     above.length === LATE.rank - 1, `saw ${above.length}, want ${LATE.rank - 1}`);
+
+  // The gate: these 8 checks (the import count, the 5 named-row lookups, the
+  // QB count, and this one) run BEFORE anything is rendered. A different CSV
+  // export trips several of them at once and then cascades into ~50 more
+  // failures downstream (row counts, sweep counts, phone width pins) that all
+  // have the same root cause. Stop here instead, with one message that names
+  // exactly what diverged and what was found, so the fix is "re-derive these
+  // constants from the new export" rather than "read 50 FAIL lines".
+  if (fixtureFailures.length) {
+    throw new CsvFixtureMismatch(
+      `\n${fixtureFailures.length} CSV-fixture assertion(s) failed before any rendering was measured -- ` +
+      `the pinned constants in tools/market-ui-check.mjs (EXPECT_PLAYERS, EARLY/LATE/PLAIN_EARLY/` +
+      `PLAIN_LATE/NO_DATA, and the QB and "above ${LATE.name}" counts) need to be re-derived for:\n` +
+      `  ${CSV}\n\n` +
+      fixtureFailures.map((f) => `  - ${f}`).join('\n') + '\n');
+  }
+
   const GLANCE_FLAGGED = fixture({
     settings: { sortMode: 'need', myTeamId: 't0', view: 'glance' },
     ...draftAwayIds(above.map((p) => p.id)),
@@ -476,6 +545,19 @@ try {
       r.late.text === LATE.text && /\blate\b/.test(r.late.badge || '')
         && !/\bearly\b/.test(r.late.badge || ''), J(r.late));
 
+    // 2b. The colour claim itself. Class assertions above pass on the base
+    //     `.market-badge` rule alone -- className is unaffected by CSS -- so
+    //     deleting `.market-badge.early`'s background slips through check 2
+    //     entirely and through the contrast floor too (the grey fallback is
+    //     MORE legible than the red). Assert both the specific colour AND the
+    //     inequality: the inequality alone would still pass if early were
+    //     recoloured to match late instead of being deleted.
+    check(`[${theme}] ${EARLY.name}'s .market-badge.early is filled with the critical red (${CRITICAL_RED})`,
+      r.early.badgeBg === CRITICAL_RED, `saw ${J(r.early.badgeBg)}`);
+    check(`[${theme}] the early and late badges have DIFFERENT backgrounds`,
+      r.early.badgeBg !== null && r.late.badgeBg !== null && r.early.badgeBg !== r.late.badgeBg,
+      `early ${J(r.early.badgeBg)} vs late ${J(r.late.badgeBg)}`);
+
     // 3. Below the flag threshold: SAME wording, no badge. Both directions, since
     //    a badge-everything regression and a wording regression are different
     //    defects.
@@ -498,22 +580,31 @@ try {
       r.earlyBadges > 0 && r.lateBadges > 0,
       `${r.earlyBadges} early, ${r.lateBadges} late`);
 
-    // 9. Contrast, on the real painted backgrounds.
-    const measured = {
-      '.market-badge.early': r.early.badgeContrast,
-      '.market-badge.late': r.late.badgeContrast,
-      '.market-plain': r.plainEarly.plainContrast,
-    };
-    for (const [sel, value] of Object.entries(measured)) {
-      check(`[${theme}] ${sel} is legible (>= ${MIN_CONTRAST}:1)`,
-        value !== null && value >= MIN_CONTRAST,
-        value === null ? 'nothing to measure' : `${value.toFixed(2)}:1`);
+    // 9. Contrast, on the real painted backgrounds. Labelled by the class
+    //    actually found on the row rather than by an assumed selector: under
+    //    a mutation that moves a badge's class (e.g. #3, hardcoded to
+    //    `late`), the element sitting in "the early row" is not necessarily
+    //    `.market-badge.early`, and a hardcoded label would keep reporting
+    //    the old name over the wrong element's number.
+    const contrastTargets = [
+      { name: `${EARLY.name}'s badge`, cls: r.early.badge, value: r.early.badgeContrast },
+      { name: `${LATE.name}'s badge`, cls: r.late.badge, value: r.late.badgeContrast },
+      { name: '.market-plain (unflagged text)', cls: null, value: r.plainEarly.plainContrast },
+    ];
+    for (const t of contrastTargets) {
+      check(`[${theme}] ${t.name}${t.cls ? ` (${t.cls})` : ''} is legible (>= ${MIN_CONTRAST}:1)`,
+        t.value !== null && t.value >= MIN_CONTRAST,
+        t.value === null ? 'nothing to measure' : `${t.value.toFixed(2)}:1`);
     }
-    console.log(`      measured: early ${fmt(measured['.market-badge.early'])},` +
-      ` late ${fmt(measured['.market-badge.late'])},` +
-      ` plain ${fmt(measured['.market-plain'])};` +
-      ` badges ${r.badgeTotal} (${r.earlyBadges} early / ${r.lateBadges} late) of ${r.rows} rows`);
-    return { panelBg: r.panelBg, contrast: measured };
+    console.log(`      measured: early ${fmt(contrastTargets[0].value)},` +
+      ` late ${fmt(contrastTargets[1].value)},` +
+      ` plain ${fmt(contrastTargets[2].value)};` +
+      ` badges ${r.badgeTotal} (${r.earlyBadges} early / ${r.lateBadges} late) of ${r.rows} rows;` +
+      ` early bg ${r.early.badgeBg}, late bg ${r.late.badgeBg}`);
+    return {
+      panelBg: r.panelBg,
+      contrast: { early: contrastTargets[0].value, late: contrastTargets[1].value, plain: contrastTargets[2].value },
+    };
   }
 
   // --------------------------------------------------- 6: the colspan="9" rows
@@ -628,10 +719,15 @@ try {
     check(`[${theme}] the overflow is INSIDE .table-wrap: ${PHONE.wrapScroll}px of hidden scroll (+/-${PHONE.tol})`,
       r.wrapScroll !== null && Math.abs(r.wrapScroll - PHONE.wrapScroll) <= PHONE.tol,
       `${r.wrapScroll}px`);
+    // "0px of overflow" passes vacuously on a blank page: with rendering
+    // broken, rows=0 and both of these would still be 0. Gated on the board
+    // actually having rendered, so a broken render fails HERE too rather than
+    // only on the row-count check above.
+    const rendered = r.rows === EXPECT_PLAYERS;
     check(`[${theme}] documentElement has 0px of horizontal overflow`,
-      r.docOverflow === 0, `${r.docOverflow}px`);
+      rendered && r.docOverflow === 0, `rows=${r.rows}, overflow=${r.docOverflow}px`);
     check(`[${theme}] body has 0px of horizontal overflow`,
-      r.bodyOverflow === 0, `${r.bodyOverflow}px`);
+      rendered && r.bodyOverflow === 0, `rows=${r.rows}, overflow=${r.bodyOverflow}px`);
     console.log(`      measured: table ${r.table}px, .table-wrap hidden scroll ${r.wrapScroll}px,` +
       ` page overflow ${r.docOverflow}/${r.bodyOverflow}px at ${r.innerWidth}x${PHONE.height}`);
     await page.send('Emulation.setDeviceMetricsOverride', {
@@ -666,6 +762,13 @@ try {
   if (chrome) chrome.proc.kill('SIGKILL');
   if (server) server.server.close();
   rmSync(profile, { recursive: true, force: true });
+}
+} catch (err) {
+  if (err instanceof CsvFixtureMismatch) {
+    console.error(err.message);
+    process.exit(2);
+  }
+  throw err;
 }
 
 function fmt(v) { return v === null || v === undefined ? 'n/a' : `${v.toFixed(2)}:1`; }

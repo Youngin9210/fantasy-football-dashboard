@@ -15,9 +15,14 @@ import { join, extname, normalize, sep } from 'node:path';
 
 // ---------------------------------------------------------------- scenarios
 
-const SPOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DST','BN','BN','BN','BN','BN','BN','BN'];
+// Exported so other harnesses (tools/market-ui-check.mjs) don't keep a second
+// copy of this league shape. isMe stays false here because that is what every
+// existing consumer of this exact array (this file's own SCENARIOS, and
+// screenshot-diff.mjs by extension) already gets; a caller that needs a
+// different isMe should remap after importing, not fork the array.
+export const SPOTS = ['QB','RB','RB','WR','WR','TE','FLEX','K','DST','BN','BN','BN','BN','BN','BN','BN'];
 const LIMITS = { QB: 3, RB: 6, WR: 6, TE: 3, K: 2, DST: 3 };
-const TEAMS = Array.from({ length: 10 }, (_, i) => ({
+export const TEAMS = Array.from({ length: 10 }, (_, i) => ({
   id: `t${i}`, name: `Team ${i + 1}`, slot: i, rosterId: i + 1, userId: null, isMe: false,
 }));
 
