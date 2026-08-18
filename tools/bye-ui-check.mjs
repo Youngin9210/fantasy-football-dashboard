@@ -33,6 +33,7 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   serve, launchChrome, Page, STORAGE_KEY, THEME_KEY, SCENARIOS, STACKED_BYE,
+  CONTRAST_SOURCE,
 } from './harness.mjs';
 
 const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -131,37 +132,11 @@ const NO_BYES_ZERO_ROSTER = glance({
 
 // ------------------------------------------------------------- in-page helpers
 
-const PAGE_HELPERS = String.raw`
-function _chan(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
-function _lum(rgb) { return 0.2126 * _chan(rgb[0]) + 0.7152 * _chan(rgb[1]) + 0.0722 * _chan(rgb[2]); }
-function _rgba(str) {
-  const m = String(str).match(/-?[\d.]+/g);
-  if (!m) return null;
-  const n = m.map(Number);
-  return { rgb: n.slice(0, 3), a: n.length > 3 ? n[3] : 1 };
-}
-
-// The first box that actually PAINTS, starting with the element itself: an opaque
-// badge is measured against its own background, and a badge with no background of
-// its own is measured against whatever shows through it — which is how the
-// original background-less .glance-pick-bye (amber text on the near-white light
-// card, 1.79:1) gets caught here rather than passing at its dark-theme 9.49:1.
-function _bg(el) {
-  for (let n = el; n; n = n.parentElement) {
-    const p = _rgba(getComputedStyle(n).backgroundColor);
-    if (p && p.a > 0) return p.rgb;
-  }
-  return [255, 255, 255];
-}
-
-function contrast(el) {
-  const fg = _rgba(getComputedStyle(el).color);
-  if (!fg) return null;
-  const a = _lum(fg.rgb);
-  const b = _lum(_bg(el));
-  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-}
-
+// The WCAG contrast helper comes from harness.mjs (CONTRAST_SOURCE) so the two
+// checkers that measure contrast share one copy of the arithmetic; see its
+// comment there for why an element with no background of its own is measured
+// against the first ancestor that paints.
+const PAGE_HELPERS = CONTRAST_SOURCE + String.raw`
 function rowFor(name) {
   return [...document.querySelectorAll('table.players tbody tr')]
     .find((tr) => {

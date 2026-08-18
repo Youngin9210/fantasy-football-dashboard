@@ -181,6 +181,45 @@ export const THEME_KEY = 'ffTheme';
 
 // ------------------------------------------------------------ in-page code
 
+// WCAG relative-luminance contrast, as in-page source. Lives here rather than in
+// either checker because two of them measure contrast now (tools/bye-ui-check.mjs
+// and tools/market-ui-check.mjs) and a second copy of this arithmetic could drift
+// out of agreement with the first. It cannot be imported from bye-ui-check.mjs:
+// that file drives a browser at import time, having no main() to import around.
+//
+// _bg finds the first box that actually PAINTS, starting with the element itself:
+// an opaque badge is measured against its own background, and a badge with no
+// background of its own is measured against whatever shows through it -- which is
+// how the original background-less .glance-pick-bye (amber text on the near-white
+// light card, 1.79:1) gets caught rather than passing at its dark-theme 9.49:1,
+// and how .market-plain's 3.50:1 on --surface-1 was found.
+export const CONTRAST_SOURCE = String.raw`
+function _chan(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+function _lum(rgb) { return 0.2126 * _chan(rgb[0]) + 0.7152 * _chan(rgb[1]) + 0.0722 * _chan(rgb[2]); }
+function _rgba(str) {
+  const m = String(str).match(/-?[\d.]+/g);
+  if (!m) return null;
+  const n = m.map(Number);
+  return { rgb: n.slice(0, 3), a: n.length > 3 ? n[3] : 1 };
+}
+
+function _bg(el) {
+  for (let n = el; n; n = n.parentElement) {
+    const p = _rgba(getComputedStyle(n).backgroundColor);
+    if (p && p.a > 0) return p.rgb;
+  }
+  return [255, 255, 255];
+}
+
+function contrast(el) {
+  const fg = _rgba(getComputedStyle(el).color);
+  if (!fg) return null;
+  const a = _lum(fg.rgb);
+  const b = _lum(_bg(el));
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+`;
+
 // The vanilla build shows Setup open on every load (index.html never carried
 // the "hidden" class, so app.js's classList.remove was a no-op). The Preact
 // build opens it only on an empty install -- an approved behavior change -- so
