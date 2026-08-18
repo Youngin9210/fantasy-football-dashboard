@@ -67,7 +67,7 @@ function Notice({ sync, children }) {
 // and the warning is a separate consideration about the weeks it leaves thin.
 // Rendered verbatim from the scorer (its separator is U+00D7, not the letter x)
 // so the Board's badge and this line can never disagree about the same conflict.
-function Suggestion({ label, entry }) {
+function Suggestion({ label, entry, showMarket }) {
   const p = entry.player;
   return html`<div class="glance-pick">
     <div class="glance-pick-label">${label}</div>
@@ -79,12 +79,17 @@ function Suggestion({ label, entry }) {
     <div class="glance-pick-why">${entry.reason}</div>
     ${entry.byeWarning ? html`<div class="glance-pick-bye">${entry.byeWarning}</div>` : null}
     ${(() => {
-      // Only when FLAGGED. Glance is a two-second read; an ordinary few-pick gap
-      // is not worth a line here, and it is still on the Board's Value column for
-      // anyone who wants it. Last of the three lines on purpose, so the card reads:
-      // what he fills, what it costs you in byes, what the market does.
+      // Only when TAKE (showMarket) AND flagged. The design doc calls for one
+      // line beneath TAKE, only when flagged: THEN entries never show it, no
+      // matter how large their gap. showMarket is passed explicitly true/false
+      // at both call sites below rather than left to fall through as
+      // undefined-is-falsy, so a reviewer can see the gate at the call site.
+      // Glance is a two-second read; an ordinary few-pick gap is not worth a
+      // line here even on TAKE, and it is still on the Board's Value column for
+      // anyone who wants it. Last of the three lines on purpose, so the card
+      // reads: what he fills, what it costs you in byes, what the market does.
       const m = marketNote(p.ecrVsAdp);
-      return m && m.flagged
+      return showMarket && m && m.flagged
         ? html`<div class="glance-pick-market">${m.long}</div>`
         : null;
     })()}
@@ -158,9 +163,9 @@ export function GlanceView({ syncStatus }) {
   }
 
   return html`<${Card} sync=${sync}>
-    <${Suggestion} label="TAKE" entry=${take} />
+    <${Suggestion} label="TAKE" entry=${take} showMarket=${true} />
     ${then.length ? html`<div class="glance-then">
-      ${then.map((e) => html`<${Suggestion} key=${e.player.id} label="THEN" entry=${e} />`)}
+      ${then.map((e) => html`<${Suggestion} key=${e.player.id} label="THEN" entry=${e} showMarket=${false} />`)}
     </div>` : null}
     <div class="glance-needs">
       ${needKeys.length

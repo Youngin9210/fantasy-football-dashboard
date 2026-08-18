@@ -67,9 +67,20 @@ function PlayerRow({ entry, teams, draftForId, tierStart }) {
       // unreachable: marketNote returns 'on rank', flagged:false, for -0. A
       // future change that badges unflagged values must take the direction from
       // marketNote rather than re-deriving it here.
+      //
+      // Unflagged text is wrapped in .market-plain rather than left as a bare
+      // string: .player-meta's own color (--text-muted) measures 3.50:1 on the
+      // light panel (--surface-1), below the 4.5:1 AA floor -- and unflagged is
+      // the common case (~78% of rows on the owner's own board), so most of the
+      // column would fail. .market-plain overrides to --text-secondary
+      // (7.73:1 light, 9.72:1 dark; recomputed via WCAG relative luminance, not
+      // assumed). Board-owner decision: fix this column only, not
+      // --text-muted/.player-meta stylesheet-wide, so Value now reads slightly
+      // darker than Team/Bye beside it -- intentional, it carries the new
+      // meaning.
       ? (market.flagged
           ? html`<span class="market-badge ${p.ecrVsAdp < 0 ? 'early' : 'late'}">${market.short}</span>`
-          : market.short)
+          : html`<span class="market-plain">${market.short}</span>`)
       : ''}</td>
     <td>${reason ? html`<span class="why-badge ${whyClass(reason)}">${reason}</span>` : null}${
       byeWarning ? html`${' '}<span class="why-badge bye">${byeWarning}</span>` : null}</td>
